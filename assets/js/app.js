@@ -52,6 +52,20 @@ Hooks.ClearJournalForm = {
       const modal = document.getElementById(id)
       if (modal) modal.style.display = "none"
     })
+    
+    this.handleEvent("toggle_dropdown", ({id}) => {
+      const dropdown = document.getElementById(id)
+      if (dropdown) {
+        dropdown.classList.toggle("hidden")
+      }
+    })
+    
+    this.handleEvent("hide_dropdown", ({id}) => {
+      const dropdown = document.getElementById(id)
+      if (dropdown) {
+        dropdown.classList.add("hidden")
+      }
+    })
   }
 }
 

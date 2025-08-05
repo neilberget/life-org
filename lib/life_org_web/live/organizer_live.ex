@@ -28,7 +28,10 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:editing_entry, nil)
      |> assign(:editing_todo, nil)
      |> assign(:editing_workspace, nil)
-     |> assign(:show_workspace_form, false)}
+     |> assign(:show_workspace_form, false)
+     |> assign(:show_ai_sidebar, false)
+     |> assign(:ai_sidebar_view, :conversations)
+     |> assign(:tag_filter, nil)}
   end
 
   @impl true
@@ -84,7 +87,8 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:incoming_todos, [])
      |> assign(:conversations, conversations)
      |> assign(:current_conversation, nil)
-     |> assign(:chat_messages, [])}
+     |> assign(:chat_messages, [])
+     |> assign(:tag_filter, nil)}
   end
 
   @impl true
@@ -148,6 +152,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     |> Map.update("description", nil, fn desc -> if String.trim(desc || "") == "", do: nil, else: desc end)
     |> Map.update("due_date", nil, fn date -> if String.trim(date || "") == "", do: nil, else: date end)
     |> Map.update("due_time", nil, fn time -> if String.trim(time || "") == "", do: nil, else: time end)
+    |> process_tags_input()
     
     case WorkspaceService.update_todo(todo, cleaned_params) do
       {:ok, updated_todo} ->
@@ -187,7 +192,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     {:ok, conversation} = case socket.assigns.current_conversation do
       nil ->
         title = LifeOrg.Conversation.generate_title_from_message(message)
-        WorkspaceService.create_conversation(%{title: title}, socket.assigns.current_workspace.id)
+        WorkspaceService.create_conversation(%{"title" => title}, socket.assigns.current_workspace.id)
       current_conv ->
         {:ok, current_conv}
     end
@@ -211,10 +216,13 @@ defmodule LifeOrgWeb.OrganizerLive do
     parent_pid = self()
     conversation_history = ConversationService.get_conversation_messages_for_ai(conversation.id)
     
+    # Use filtered todos if tag filter is active, otherwise use all todos
+    todos_for_ai = filter_todos_by_tag(socket.assigns.todos, socket.assigns.tag_filter)
+    
     Task.start(fn ->
       try do
         IO.puts("Starting AI request...")
-        case AIHandler.process_message(message, socket.assigns.journal_entries, conversation_history) do
+        case AIHandler.process_message(message, socket.assigns.journal_entries, todos_for_ai, conversation_history) do
           {:ok, response, tool_actions} ->
             IO.puts("AI response received: #{inspect(response)}")
             send(parent_pid, {:ai_response, response, tool_actions, conversation.id})
@@ -241,7 +249,8 @@ defmodule LifeOrgWeb.OrganizerLive do
     {:noreply,
      socket
      |> assign(:current_conversation, nil)
-     |> assign(:chat_messages, [])}
+     |> assign(:chat_messages, [])
+     |> assign(:ai_sidebar_view, :chat)}
   end
 
   @impl true
@@ -255,7 +264,8 @@ defmodule LifeOrgWeb.OrganizerLive do
     {:noreply,
      socket
      |> assign(:current_conversation, conversation)
-     |> assign(:chat_messages, display_messages)}
+     |> assign(:chat_messages, display_messages)
+     |> assign(:ai_sidebar_view, :chat)}
   end
 
   @impl true
@@ -360,6 +370,58 @@ defmodule LifeOrgWeb.OrganizerLive do
       {:error, message} ->
         {:noreply, put_flash(socket, :error, message)}
     end
+  end
+
+  @impl true
+  def handle_event("toggle_ai_sidebar", _params, socket) do
+    # When opening sidebar, default to conversations view unless we're in an active chat
+    new_view = if !socket.assigns.show_ai_sidebar and length(socket.assigns.chat_messages) == 0 do
+      :conversations
+    else
+      socket.assigns.ai_sidebar_view
+    end
+    
+    {:noreply, 
+     socket
+     |> assign(:show_ai_sidebar, !socket.assigns.show_ai_sidebar)
+     |> assign(:ai_sidebar_view, new_view)}
+  end
+
+  @impl true
+  def handle_event("ai_sidebar_show_conversations", _params, socket) do
+    {:noreply, assign(socket, :ai_sidebar_view, :conversations)}
+  end
+
+  @impl true
+  def handle_event("ai_sidebar_show_chat", _params, socket) do
+    {:noreply, assign(socket, :ai_sidebar_view, :chat)}
+  end
+
+  @impl true
+  def handle_event("toggle_tag_dropdown", _params, socket) do
+    {:noreply, push_event(socket, "toggle_dropdown", %{id: "tag-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("hide_tag_dropdown", _params, socket) do
+    {:noreply, push_event(socket, "hide_dropdown", %{id: "tag-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("filter_by_tag", %{"tag" => tag}, socket) do
+    filter = if tag == "", do: nil, else: tag
+    {:noreply, 
+     socket
+     |> assign(:tag_filter, filter)
+     |> push_event("hide_dropdown", %{id: "tag-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("clear_tag_filter", _params, socket) do
+    {:noreply, 
+     socket
+     |> assign(:tag_filter, nil)
+     |> push_event("hide_dropdown", %{id: "tag-dropdown"})}
   end
 
   @impl true
@@ -503,6 +565,34 @@ defmodule LifeOrgWeb.OrganizerLive do
       end
       
       {todo.completed, priority_order, due_datetime, todo.inserted_at}
+    end)
+  end
+  
+  defp process_tags_input(params) do
+    case Map.get(params, "tags_input") do
+      nil ->
+        params
+      tags_string when is_binary(tags_string) ->
+        tags = if String.trim(tags_string) == "" do
+          []
+        else
+          tags_string
+          |> String.split(",")
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.uniq()
+        end
+        
+        params
+        |> Map.put("tags", tags)
+        |> Map.delete("tags_input")
+    end
+  end
+  
+  defp filter_todos_by_tag(todos, nil), do: todos
+  defp filter_todos_by_tag(todos, tag) do
+    Enum.filter(todos, fn todo ->
+      todo.tags && Enum.member?(todo.tags, tag)
     end)
   end
 

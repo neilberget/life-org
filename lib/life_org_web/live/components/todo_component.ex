@@ -3,10 +3,90 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   import LifeOrgWeb.Components.ModalComponent
 
   def todo_column(assigns) do
+    unique_tags = get_unique_tags(assigns.all_todos || assigns.todos)
+    assigns = assign(assigns, :unique_tags, unique_tags)
+    |> assign(:show_tag_dropdown, false)
+    
     ~H"""
-    <div class="w-1/3 bg-white border-l border-gray-200 overflow-y-auto">
+    <div class="w-1/2 bg-white overflow-y-auto">
       <div class="p-6">
-        <h2 class="text-2xl font-bold text-gray-800 mb-6">Todo List</h2>
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-3">
+            <h2 class="text-2xl font-bold text-gray-800">Todo List</h2>
+            
+            <!-- Tag Filter Dropdown -->
+            <%= if length(@unique_tags) > 0 do %>
+              <div class="relative">
+                <button
+                  phx-click="toggle_tag_dropdown"
+                  class={"p-1.5 rounded-md transition-colors #{if @tag_filter, do: "bg-blue-100 text-blue-600 hover:bg-blue-200", else: "text-gray-500 hover:bg-gray-100"}"}
+                  title="Filter by tag"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                  </svg>
+                </button>
+                
+                <!-- Dropdown Menu -->
+                <div 
+                  id="tag-dropdown"
+                  class="absolute left-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 hidden"
+                  phx-click-away="hide_tag_dropdown"
+                >
+                  <div class="p-3">
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Filter by Tag</h3>
+                    <div class="space-y-1 max-h-64 overflow-y-auto">
+                      <%= for tag <- @unique_tags do %>
+                        <button
+                          phx-click="filter_by_tag"
+                          phx-value-tag={tag}
+                          class={"w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center justify-between group #{if @tag_filter == tag, do: "bg-blue-50 text-blue-700", else: "hover:bg-gray-50"}"}
+                        >
+                          <span class="flex items-center gap-2">
+                            <span class="text-blue-500">#</span>
+                            <%= tag %>
+                          </span>
+                          <%= if @tag_filter == tag do %>
+                            <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                          <% end %>
+                        </button>
+                      <% end %>
+                    </div>
+                    <%= if @tag_filter do %>
+                      <div class="mt-2 pt-2 border-t border-gray-200">
+                        <button
+                          phx-click="clear_tag_filter"
+                          class="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        >
+                          <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                          Clear filter
+                        </button>
+                      </div>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+            
+            <%= if @tag_filter do %>
+              <div class="flex items-center gap-2">
+                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full flex items-center gap-1">
+                  #<%= @tag_filter %>
+                  <button
+                    phx-click="clear_tag_filter"
+                    class="ml-1 hover:text-blue-900"
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        </div>
         
         <!-- Incoming Todos Section -->
         <%= if assigns[:incoming_todos] && length(@incoming_todos) > 0 do %>
@@ -94,6 +174,15 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               <%= @todo.priority %>
             </span>
           <% end %>
+          <%= if @todo.tags && length(@todo.tags) > 0 do %>
+            <div class="flex flex-wrap gap-1">
+              <%= for tag <- @todo.tags do %>
+                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                  #<%= tag %>
+                </span>
+              <% end %>
+            </div>
+          <% end %>
         </div>
       </div>
     </div>
@@ -166,6 +255,15 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               📅 <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
             </span>
           <% end %>
+          <%= if @todo.tags && length(@todo.tags) > 0 do %>
+            <div class="flex flex-wrap gap-1">
+              <%= for tag <- @todo.tags do %>
+                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                  #<%= tag %>
+                </span>
+              <% end %>
+            </div>
+          <% end %>
         </div>
       </div>
     </div>
@@ -210,6 +308,18 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             class="w-full p-3 border border-gray-300 rounded-lg resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Optional description..."
           ><%= @todo.description || "" %></textarea>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+          <input
+            type="text"
+            name="todo[tags_input]"
+            value={if @todo.tags, do: Enum.join(@todo.tags, ", "), else: ""}
+            placeholder="Enter tags separated by commas (e.g., work, urgent, project1)"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p class="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
         </div>
         
         <div class="flex gap-4">
@@ -279,5 +389,12 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     date_str = Date.to_string(date)
     time_str = Time.to_string(time) |> String.slice(0, 5)  # Show only HH:MM
     "#{date_str} at #{time_str}"
+  end
+  
+  defp get_unique_tags(todos) do
+    todos
+    |> Enum.flat_map(fn todo -> todo.tags || [] end)
+    |> Enum.uniq()
+    |> Enum.sort()
   end
 end
