@@ -118,22 +118,39 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         checked={@todo.completed}
         phx-click="toggle_todo"
         phx-value-id={@todo.id}
-        class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+        class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 z-10 relative"
       />
-      <div class="flex-1">
+      <div 
+        class="flex-1 cursor-pointer"
+        phx-click="edit_todo"
+        phx-value-id={@todo.id}
+      >
         <div class="flex justify-between items-start">
           <h4 class={"font-medium #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
             <%= @todo.title %>
           </h4>
-          <button
-            phx-click="edit_todo"
-            phx-value-id={@todo.id}
-            class="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 transition-opacity"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-            </svg>
-          </button>
+          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              phx-click="edit_todo"
+              phx-value-id={@todo.id}
+              class="text-blue-500 hover:text-blue-700 z-10 relative"
+              onclick="event.stopPropagation()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+              </svg>
+            </button>
+            <button
+              phx-click="delete_todo"
+              phx-value-id={@todo.id}
+              data-confirm="Delete this todo?"
+              class="text-red-500 hover:text-red-700 z-10 relative"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          </div>
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <p class="text-sm text-gray-600 mt-1"><%= @todo.description %></p>
@@ -142,6 +159,11 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <%= if @todo.priority do %>
             <span class={"text-xs px-2 py-1 rounded-full #{priority_class(@todo.priority)}"}>
               <%= @todo.priority %>
+            </span>
+          <% end %>
+          <%= if @todo.due_date do %>
+            <span class="text-xs text-gray-500">
+              📅 <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
             </span>
           <% end %>
         </div>
@@ -156,7 +178,16 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     else
       ""
     end
-    assigns = assign(assigns, :due_date_string, due_date)
+    
+    due_time = if assigns.todo.due_time do
+      Time.to_string(assigns.todo.due_time)
+    else
+      ""
+    end
+    
+    assigns = assigns
+    |> assign(:due_date_string, due_date)
+    |> assign(:due_time_string, due_time)
     
     ~H"""
     <form phx-submit="update_todo" phx-value-id={@todo.id}>
@@ -176,10 +207,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
           <textarea
             name="todo[description]"
-            value={@todo.description || ""}
             class="w-full p-3 border border-gray-300 rounded-lg resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Optional description..."
-          />
+          ><%= @todo.description || "" %></textarea>
         </div>
         
         <div class="flex gap-4">
@@ -201,6 +231,16 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               type="date"
               name="todo[due_date]"
               value={@due_date_string}
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Due Time</label>
+            <input
+              type="time"
+              name="todo[due_time]"
+              value={@due_time_string}
               class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -230,4 +270,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   defp priority_class("medium"), do: "bg-yellow-100 text-yellow-800"
   defp priority_class("low"), do: "bg-green-100 text-green-800"
   defp priority_class(_), do: "bg-gray-100 text-gray-800"
+  
+  defp format_due_datetime(date, nil) do
+    Date.to_string(date)
+  end
+  
+  defp format_due_datetime(date, time) do
+    date_str = Date.to_string(date)
+    time_str = Time.to_string(time) |> String.slice(0, 5)  # Show only HH:MM
+    "#{date_str} at #{time_str}"
+  end
 end

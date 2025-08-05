@@ -11,7 +11,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     
     # Load data for current workspace
     journal_entries = WorkspaceService.list_journal_entries(current_workspace.id)
-    todos = WorkspaceService.list_todos(current_workspace.id)
+    todos = WorkspaceService.list_todos(current_workspace.id) |> sort_todos()
     conversations = WorkspaceService.list_conversations(current_workspace.id)
     
     {:ok,
@@ -73,7 +73,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     
     # Load data for the new workspace
     journal_entries = WorkspaceService.list_journal_entries(workspace.id)
-    todos = WorkspaceService.list_todos(workspace.id)
+    todos = WorkspaceService.list_todos(workspace.id) |> sort_todos()
     conversations = WorkspaceService.list_conversations(workspace.id)
     
     {:noreply,
@@ -147,6 +147,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     cleaned_params = params
     |> Map.update("description", nil, fn desc -> if String.trim(desc || "") == "", do: nil, else: desc end)
     |> Map.update("due_date", nil, fn date -> if String.trim(date || "") == "", do: nil, else: date end)
+    |> Map.update("due_time", nil, fn time -> if String.trim(time || "") == "", do: nil, else: time end)
     
     case WorkspaceService.update_todo(todo, cleaned_params) do
       {:ok, updated_todo} ->
@@ -166,6 +167,18 @@ defmodule LifeOrgWeb.OrganizerLive do
       {:error, %Ecto.Changeset{} = _changeset} ->
         {:noreply, put_flash(socket, :error, "Error updating todo")}
     end
+  end
+
+  @impl true
+  def handle_event("delete_todo", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, String.to_integer(id))
+    {:ok, _} = WorkspaceService.delete_todo(todo)
+    
+    todos = Enum.reject(socket.assigns.todos, &(&1.id == String.to_integer(id)))
+    {:noreply, 
+     socket
+     |> assign(:todos, todos)
+     |> put_flash(:info, "Todo deleted successfully")}
   end
 
   @impl true
@@ -326,7 +339,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         {journal_entries, todos, conversations} = if current_workspace.id != socket.assigns.current_workspace.id do
           {
             WorkspaceService.list_journal_entries(current_workspace.id),
-            WorkspaceService.list_todos(current_workspace.id),
+            WorkspaceService.list_todos(current_workspace.id) |> sort_todos(),
             WorkspaceService.list_conversations(current_workspace.id)
           }
         else
@@ -481,7 +494,15 @@ defmodule LifeOrgWeb.OrganizerLive do
         "low" -> 2
         _ -> 3
       end
-      {todo.completed, priority_order, todo.inserted_at}
+      
+      # Create a datetime for sorting (nil dates go to end)
+      due_datetime = case {todo.due_date, todo.due_time} do
+        {nil, _} -> ~N[2099-12-31 23:59:59]  # Far future for todos without due dates
+        {date, nil} -> NaiveDateTime.new!(date, ~T[23:59:59])  # End of day if no time specified
+        {date, time} -> NaiveDateTime.new!(date, time)
+      end
+      
+      {todo.completed, priority_order, due_datetime, todo.inserted_at}
     end)
   end
 
