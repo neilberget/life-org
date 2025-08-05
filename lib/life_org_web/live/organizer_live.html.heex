@@ -1,0 +1,186 @@
+<div class="flex flex-col h-screen bg-gray-50">
+  <!-- Workspace Selector Header -->
+  <div class="bg-white border-b border-gray-200 px-6 py-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-2">
+          <div class="w-4 h-4 rounded-full" style={"background-color: #{@current_workspace.color}"}></div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @current_workspace.name %></h1>
+        </div>
+        <form phx-change="switch_workspace">
+          <div class="relative">
+            <select 
+              name="id" 
+              value={@current_workspace.id}
+              class="appearance-none bg-gray-50 border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
+            >
+              <%= for workspace <- @workspaces do %>
+                <option value={workspace.id}>
+                  <%= workspace.name %>
+                </option>
+              <% end %>
+            </select>
+            <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </div>
+          </div>
+        </form>
+      </div>
+      
+      <div class="flex items-center space-x-2">
+        <button 
+          phx-click="show_workspace_form"
+          class="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          New Workspace
+        </button>
+        <button 
+          phx-click="edit_workspace" 
+          phx-value-id={@current_workspace.id}
+          class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+        >
+          Edit
+        </button>
+      </div>
+    </div>
+    
+    <p class="text-sm text-gray-600 mt-1"><%= @current_workspace.description %></p>
+  </div>
+
+  <!-- New Workspace Form -->
+  <%= if @show_workspace_form do %>
+    <div class="bg-blue-50 border-b border-blue-200 px-6 py-4">
+      <form phx-submit="create_workspace" class="flex items-end space-x-3">
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <input 
+            type="text" 
+            name="workspace[name]" 
+            required
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Workspace name"
+          />
+        </div>
+        <div class="flex-1">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <input 
+            type="text" 
+            name="workspace[description]" 
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Optional description"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Color</label>
+          <input 
+            type="color" 
+            name="workspace[color]" 
+            value="#3B82F6"
+            class="w-12 h-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <button 
+          type="submit"
+          class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          Create
+        </button>
+        <button 
+          type="button"
+          phx-click="hide_workspace_form"
+          class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+        >
+          Cancel
+        </button>
+      </form>
+    </div>
+  <% end %>
+
+  <!-- Main Content -->
+  <div class="flex flex-1 overflow-hidden">
+    <JournalComponent.journal_column 
+      entries={@journal_entries} 
+      editing_entry={@editing_entry}
+    />
+    <ChatComponent.chat_column 
+      messages={@chat_messages} 
+      conversations={@conversations}
+      current_conversation={@current_conversation}
+    />
+    <TodoComponent.todo_column 
+      todos={@todos}
+      incoming_todos={@incoming_todos}
+      editing_todo={@editing_todo}
+    />
+  </div>
+</div>
+
+<!-- Edit Workspace Modal -->
+<%= if @editing_workspace do %>
+  <div id="edit-workspace-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+      <div class="mt-3">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Edit Workspace</h3>
+        <form phx-submit="update_workspace" phx-value-id={@editing_workspace.id}>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Name</label>
+            <input 
+              type="text" 
+              name="workspace[name]" 
+              value={@editing_workspace.name}
+              required
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+            <textarea 
+              name="workspace[description]" 
+              rows="3"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            ><%= @editing_workspace.description %></textarea>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Color</label>
+            <input 
+              type="color" 
+              name="workspace[color]" 
+              value={@editing_workspace.color}
+              class="w-full h-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div class="flex justify-between">
+            <button 
+              type="button"
+              phx-click="delete_workspace" 
+              phx-value-id={@editing_workspace.id}
+              class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+              onclick="return confirm('Are you sure you want to delete this workspace? All data will be permanently removed.')"
+            >
+              Delete
+            </button>
+            <div class="space-x-2">
+              <button 
+                type="button"
+                phx-click="assign" 
+                phx-value-editing_workspace=""
+                onclick="document.getElementById('edit-workspace-modal').style.display='none'"
+                class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Update
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+<% end %>
