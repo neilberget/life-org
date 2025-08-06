@@ -605,6 +605,78 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </div>
         </div>
         
+        <!-- Journal Entry Reference -->
+        <%= if @todo.journal_entry do %>
+          <div class="mb-6">
+            <div class="relative inline-block">
+              <button
+                onclick={"
+                  const popup = document.getElementById('journal-ref-popup-#{@todo.id}');
+                  popup.classList.toggle('hidden');
+                  if (!popup.classList.contains('hidden')) {
+                    setTimeout(() => {
+                      const clickAway = (e) => {
+                        if (!popup.contains(e.target) && !e.target.closest('[onclick*=\"journal-ref-popup-#{@todo.id}\"]')) {
+                          popup.classList.add('hidden');
+                          document.removeEventListener('click', clickAway);
+                        }
+                      };
+                      document.addEventListener('click', clickAway);
+                    }, 0);
+                  }
+                "}
+                class="flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                title="Created from journal entry"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                </svg>
+                <span class="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full">1</span>
+              </button>
+              
+              <!-- Popup -->
+              <div 
+                id={"journal-ref-popup-#{@todo.id}"}
+                class="hidden absolute left-0 top-8 z-50 w-80 bg-white rounded-lg shadow-lg border border-gray-200 p-4"
+                onclick="event.stopPropagation()"
+              >
+                <div class="flex items-start gap-3">
+                  <div class="flex-shrink-0">
+                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                    </svg>
+                  </div>
+                  <div class="flex-1">
+                    <h4 class="font-medium text-gray-900 mb-1">Created from Journal Entry</h4>
+                    <p class="text-gray-600 text-sm mb-3">
+                      This todo was created from your journal entry on <%= Calendar.strftime(@todo.journal_entry.entry_date, "%A, %B %d, %Y") %>
+                    </p>
+                    <a 
+                      href={"/journal/#{@todo.journal_entry.id}"}
+                      class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    >
+                      View journal entry
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                      </svg>
+                    </a>
+                  </div>
+                </div>
+                
+                <!-- Close button -->
+                <button
+                  onclick={"document.getElementById('journal-ref-popup-#{@todo.id}').classList.add('hidden')"}
+                  class="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        <% end %>
+
         <!-- Tags -->
         <%= if @todo.tags && length(@todo.tags) > 0 do %>
           <div class="flex flex-wrap gap-2 mb-6">

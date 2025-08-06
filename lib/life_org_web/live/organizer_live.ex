@@ -60,7 +60,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         existing_todos = socket.assigns.todos
         
         Task.start(fn ->
-          {:ok, todo_actions} = AIHandler.extract_todos_from_journal(entry.content, existing_todos)
+          {:ok, todo_actions} = AIHandler.extract_todos_from_journal(entry.content, existing_todos, entry.id)
           send(parent_pid, {:extracted_todos, todo_actions, workspace_id})
         end)
         
@@ -153,7 +153,7 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("toggle_description_checkbox", params, socket) do
     %{"todo-id" => todo_id, "checkbox-index" => checkbox_index, "checked" => checked_str} = params
-    todo = Repo.get!(Todo, String.to_integer(todo_id))
+    todo = Repo.get!(Todo, String.to_integer(todo_id)) |> Repo.preload(:journal_entry)
     
     # checkbox_index might already be an integer from JavaScript
     checkbox_index = if is_integer(checkbox_index), do: checkbox_index, else: String.to_integer(checkbox_index)
@@ -617,7 +617,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("view_todo", %{"id" => id}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(id))
+    todo = Repo.get!(Todo, String.to_integer(id)) |> Repo.preload(:journal_entry)
     comments = Repo.all(from c in TodoComment, where: c.todo_id == ^todo.id, order_by: [desc: c.inserted_at])
     |> Repo.preload([])
     
@@ -703,7 +703,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     
     # Ensure viewing_todo is set - if not, reload it
     socket = if socket.assigns[:viewing_todo] == nil do
-      todo = Repo.get!(Todo, todo_id_int)
+      todo = Repo.get!(Todo, todo_id_int) |> Repo.preload(:journal_entry)
       comments = Repo.all(from c in TodoComment, where: c.todo_id == ^todo_id_int, order_by: [desc: c.inserted_at])
       |> Repo.preload([])
       socket 
@@ -762,7 +762,7 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("send_todo_chat_message", %{"todo-id" => todo_id, "message" => message}, socket) do
     todo_id_int = String.to_integer(todo_id)
-    todo = Repo.get!(Todo, todo_id_int)
+    todo = Repo.get!(Todo, todo_id_int) |> Repo.preload(:journal_entry)
     workspace_id = socket.assigns.current_workspace.id
     
     # Get or create conversation for this todo

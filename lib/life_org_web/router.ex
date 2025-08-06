@@ -18,6 +18,7 @@ defmodule LifeOrgWeb.Router do
     pipe_through :browser
 
     live "/", OrganizerLive
+    live "/journal/:id", JournalEntryLive
   end
 
   # Other scopes may use custom stacks.

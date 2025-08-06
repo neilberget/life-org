@@ -34,7 +34,7 @@ defmodule LifeOrg.AIHandler do
     end
   end
 
-  def extract_todos_from_journal(journal_content, existing_todos \\ []) do
+  def extract_todos_from_journal(journal_content, existing_todos \\ [], journal_entry_id \\ nil) do
     # Get existing tags for context
     existing_tags = get_unique_tags(existing_todos)
     tags_context = case existing_tags do
@@ -101,7 +101,7 @@ defmodule LifeOrg.AIHandler do
         tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
         
         # Convert tool uses to our action format
-        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, existing_todos))
+        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, existing_todos, journal_entry_id))
         {:ok, tool_actions}
         
       {:error, error} ->
@@ -254,7 +254,7 @@ defmodule LifeOrg.AIHandler do
     ]
   end
   
-  defp convert_tool_use_to_action(tool_use, _todos) do
+  defp convert_tool_use_to_action(tool_use, _todos, journal_entry_id \\ nil) do
     case tool_use.name do
       "create_todo" ->
         %{
@@ -262,7 +262,8 @@ defmodule LifeOrg.AIHandler do
           title: tool_use.input["title"],
           description: tool_use.input["description"] || "",
           priority: tool_use.input["priority"] || "medium",
-          tags: tool_use.input["tags"] || []
+          tags: tool_use.input["tags"] || [],
+          journal_entry_id: journal_entry_id
         }
         
       "update_todo" ->
@@ -298,13 +299,22 @@ defmodule LifeOrg.AIHandler do
   end
   
   def execute_tool_action(%{action: :create_todo} = params, workspace_id) do
-    WorkspaceService.create_todo(%{
+    todo_attrs = %{
       "title" => params.title,
       "description" => params.description,
       "priority" => params.priority,
       "tags" => params.tags || [],
       "ai_generated" => true
-    }, workspace_id)
+    }
+    
+    # Add journal_entry_id if present
+    todo_attrs = if params[:journal_entry_id] do
+      Map.put(todo_attrs, "journal_entry_id", params.journal_entry_id)
+    else
+      todo_attrs
+    end
+    
+    WorkspaceService.create_todo(todo_attrs, workspace_id)
   end
   
   def execute_tool_action(%{action: :update_todo, id: id, updates: updates}, _workspace_id) do
@@ -367,9 +377,8 @@ defmodule LifeOrg.AIHandler do
     related_todos = find_related_todos(todo, all_todos)
     related_context = format_related_todos(related_todos)
     
-    # Recent journal entries for life context
-    recent_entries = Enum.take(journal_entries, 3)
-    entries_context = format_journal_entries(recent_entries)
+    # Handle journal entries context with priority for originating entry
+    entries_context = format_journal_entries_for_todo(todo, journal_entries)
     
     # Get existing tags for context
     existing_tags = get_unique_tags(all_todos)
@@ -484,6 +493,67 @@ defmodule LifeOrg.AIHandler do
         end)
         "Recent journal entries:\n#{formatted}"
     end
+  end
+
+  defp format_journal_entries_for_todo(todo, journal_entries) do
+    # Check if this todo has an originating journal entry
+    originating_entry = if todo.journal_entry_id do
+      # Find the originating entry in the provided entries or load it separately if needed
+      Enum.find(journal_entries, fn entry -> entry.id == todo.journal_entry_id end) ||
+        (Repo.get(LifeOrg.JournalEntry, todo.journal_entry_id))
+    else
+      nil
+    end
+
+    case {originating_entry, journal_entries} do
+      {nil, []} -> 
+        "No recent journal entries available."
+        
+      {nil, entries} ->
+        # No originating entry, show recent entries normally
+        recent_entries = Enum.take(entries, 3)
+        format_journal_entries(recent_entries)
+        
+      {orig_entry, entries} ->
+        # Prioritize originating entry, then show recent entries (excluding the originating one to avoid duplication)
+        other_entries = entries 
+        |> Enum.reject(fn entry -> entry.id == orig_entry.id end)
+        |> Enum.take(2) # Take 2 since we'll include the originating entry
+
+        formatted_orig = format_single_journal_entry(orig_entry, true)
+        
+        case other_entries do
+          [] ->
+            """
+            ORIGINATING JOURNAL ENTRY (this todo was created from this entry):
+            #{formatted_orig}
+            """
+            
+          _ ->
+            formatted_others = Enum.map_join(other_entries, "\n\n", &format_single_journal_entry(&1, false))
+            """
+            ORIGINATING JOURNAL ENTRY (this todo was created from this entry):
+            #{formatted_orig}
+
+            Other recent journal entries:
+            #{formatted_others}
+            """
+        end
+    end
+  end
+
+  defp format_single_journal_entry(entry, is_originating) do
+    date = Calendar.strftime(entry.entry_date || entry.inserted_at, "%B %d, %Y")
+    mood = if entry.mood && entry.mood != "", do: " (#{entry.mood})", else: ""
+    
+    # For originating entry, show full content; for others, truncate as before
+    content = if is_originating do
+      entry.content
+    else
+      "#{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
+    end
+    
+    "#{date}#{mood}: #{content}"
   end
 
   defp build_todo_tools_definition(_todo, all_todos) do

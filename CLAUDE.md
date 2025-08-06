@@ -23,9 +23,11 @@ A Phoenix LiveView application that helps organize life with journal entries, AI
 ```
 journal_entries:
 - id, content (text), mood, entry_date, tags (JSON), timestamps
+- has_many :todos (reverse reference for todo creation context)
 
 todos:
-- id, title, description, completed, priority, due_date, due_time, ai_generated, tags (JSON), workspace_id, timestamps
+- id, title, description, completed, priority, due_date, due_time, ai_generated, tags (JSON), workspace_id, journal_entry_id (nullable), timestamps
+- belongs_to :journal_entry (tracks originating journal entry for AI-created todos)
 
 conversations:
 - id, title, workspace_id, todo_id (nullable), timestamps
@@ -167,6 +169,9 @@ mix phx.server
 - Code should compile without warnings
 - Database schema should be thoughtfully designed from the start
 - Modal interfaces provide excellent UX for editing operations
+- Subtle UI elements (icons with badges) preferred over prominent banners
+- Bidirectional data relationships enhance user context and navigation
+- **Contextual AI Enhancement**: AI systems benefit significantly from prioritizing specific relevant context over generic recent data
 
 ## Current Implementation Details
 
@@ -178,6 +183,7 @@ mix phx.server
 - **Incoming Todos**: Special section for AI-extracted todos from journal entries (blue banner)
 - **Todo Views**: Click todo to view details, hover to see edit/delete buttons
 - **Workspace Support**: Todos are scoped to workspaces (default workspace auto-created)
+- **Journal Entry References**: Todos created from journal entries maintain bidirectional links for context traceability
 
 ### LiveView Event Handlers (organizer_live.ex)
 - `add_todo`: Opens the add todo modal
@@ -249,7 +255,8 @@ mix phx.server
 - Advanced AI tool calling (calendar integration, reminders)
 
 ### Todo-Based AI Chat Architecture
-- **Context-Aware AI**: AI knows the specific todo, its comments, related todos, and recent journal entries
+- **Context-Aware AI**: AI knows the specific todo, its comments, related todos, and journal entries
+- **Enhanced Context Priority**: For todos created from journal entries, AI receives the full originating journal entry plus recent entries for optimal contextual understanding
 - **Conversation Persistence**: Each todo can have multiple persistent chat conversations
 - **Tool Integration**: AI can directly modify todos (update fields, complete tasks, create related todos)
 - **Modal State Management**: Critical to use `push_event("show_modal")` after state changes to prevent modal closing

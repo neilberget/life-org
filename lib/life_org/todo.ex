@@ -3,6 +3,7 @@ defmodule LifeOrg.Todo do
   import Ecto.Changeset
   alias LifeOrg.Workspace
   alias LifeOrg.TodoComment
+  alias LifeOrg.JournalEntry
 
   schema "todos" do
     field :priority, :string
@@ -16,6 +17,7 @@ defmodule LifeOrg.Todo do
     field :comment_count, :integer, virtual: true, default: 0
 
     belongs_to :workspace, Workspace
+    belongs_to :journal_entry, JournalEntry
     has_many :comments, TodoComment, foreign_key: :todo_id
 
     timestamps(type: :utc_datetime)
@@ -24,7 +26,7 @@ defmodule LifeOrg.Todo do
   @doc false
   def changeset(todo, attrs) do
     todo
-    |> cast(attrs, [:title, :description, :completed, :priority, :due_date, :due_time, :ai_generated, :workspace_id, :tags])
+    |> cast(attrs, [:title, :description, :completed, :priority, :due_date, :due_time, :ai_generated, :workspace_id, :journal_entry_id, :tags])
     |> validate_required([:title, :workspace_id])
     |> validate_inclusion(:priority, ["high", "medium", "low"])
     |> foreign_key_constraint(:workspace_id)
