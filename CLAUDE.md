@@ -191,12 +191,14 @@ mix phx.server
 - `filter_by_tag`: Filters todos by selected tag
 - `accept_incoming_todos`: Accepts AI-extracted todos
 - `dismiss_incoming_todos`: Deletes all incoming todos
+- `toggle_description_checkbox`: Handles interactive checkbox toggling in todo descriptions
 
 ### Component Architecture
-- **TodoComponent** (`todo_component.ex`): Handles all todo UI rendering
+- **TodoComponent** (`todo_component.ex`): Handles all todo UI rendering with interactive markdown checkboxes
 - **Modal System**: Reusable modal component for forms and views
 - **Form Components**: `add_todo_form`, `edit_todo_form` with consistent styling
 - **Priority Classes**: Visual distinction with colors (red=high, yellow=medium, green=low)
+- **JavaScript Hooks**: `InteractiveCheckboxes` for checkbox interactions, `WorkspacePersistence` for localStorage
 
 ### Database Schema Extensions
 - **todos table**: workspace_id, due_time, tags (JSON array)
@@ -225,6 +227,17 @@ mix phx.server
   - Set to `true` when journal entry is created and background task starts
   - Set to `false` when `handle_info({:extracted_todos, ...})` completes
   - Handled in both success and failure cases to prevent stuck states
+
+### Interactive Markdown Checkboxes in Todo Descriptions
+- **GitHub-style Syntax**: Supports `- [ ]` (unchecked) and `- [x]` (checked) markdown syntax
+- **Real-time Interactivity**: Checkboxes are clickable and update the todo description in real-time
+- **JavaScript Hook**: `InteractiveCheckboxes` hook manages checkbox interactions and prevents modal closing
+- **Backend Processing**: 
+  - `toggle_description_checkbox` event handler updates markdown in database
+  - `update_description_checkbox/3` function handles markdown parsing and checkbox state toggling
+  - Optimistic updates with server confirmation via `checkbox_toggle_complete` event
+- **Modal State Preservation**: Special handling to keep todo view modal open during checkbox updates
+- **Markdown Rendering**: Custom `render_interactive_description/2` function converts markdown checkboxes to interactive HTML inputs
 
 ## Future Enhancement Opportunities
 
@@ -259,3 +272,6 @@ mix phx.server
 - Tags are processed from comma-separated input into JSON arrays
 - **AI responses**: Use Earmark for markdown rendering, handle empty responses for tool-only calls
 - **Background tasks**: All AI processing happens asynchronously to avoid blocking the UI
+- **Interactive Checkboxes**: Use `push_event("show_modal")` after checkbox updates to prevent modal from closing
+- **Checkbox State Management**: JavaScript maintains `data-current-state` attributes to handle optimistic updates
+- **Event Handling**: Checkbox clicks use `preventDefault()` and `stopPropagation()` to prevent unwanted interactions

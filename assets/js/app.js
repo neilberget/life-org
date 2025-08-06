@@ -131,39 +131,63 @@ Hooks.ClearJournalForm = {
 Hooks.InteractiveCheckboxes = {
   mounted() {
     this.setupCheckboxListeners()
+    
+    // Handle the completion event from server
+    this.handleEvent("checkbox_toggle_complete", ({todo_id, checkbox_index, checked}) => {
+      // Confirm the checkbox state matches what server says
+      const checkbox = this.el.querySelector(`input[data-todo-id="${todo_id}"][data-checkbox-index="${checkbox_index}"]`)
+      if (checkbox) {
+        checkbox.checked = checked
+        checkbox.setAttribute('data-current-state', checked)
+      }
+    })
   },
   
   updated() {
+    // Only re-setup if we don't have listeners
     this.setupCheckboxListeners()
   },
   
   setupCheckboxListeners() {
-    // Find all checkboxes in todo descriptions and make them interactive
     const checkboxes = this.el.querySelectorAll('input[type="checkbox"][data-todo-checkbox]')
     
     checkboxes.forEach(checkbox => {
-      // Remove existing listeners to avoid duplicates
-      checkbox.removeEventListener('change', this.handleCheckboxChange.bind(this))
+      // Skip if already has listener
+      if (checkbox.hasAttribute('data-listener-attached')) return
       
-      // Add new listener
-      checkbox.addEventListener('change', this.handleCheckboxChange.bind(this))
-    })
-  },
-  
-  handleCheckboxChange(event) {
-    const checkbox = event.target
-    const todoId = checkbox.getAttribute('data-todo-id')
-    const checkboxIndex = parseInt(checkbox.getAttribute('data-checkbox-index'))
-    const isChecked = checkbox.checked
-    
-    // Push event to LiveView to update the todo description
-    this.pushEvent("toggle_description_checkbox", {
-      todo_id: todoId,
-      checkbox_index: checkboxIndex,
-      checked: isChecked
+      // Store initial state
+      checkbox.setAttribute('data-current-state', checkbox.checked)
+      checkbox.setAttribute('data-listener-attached', 'true')
+      
+      // Add click listener
+      checkbox.addEventListener('click', (event) => {
+        // Prevent all propagation
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+        
+        const todoId = checkbox.getAttribute('data-todo-id')
+        const checkboxIndex = checkbox.getAttribute('data-checkbox-index')
+        
+        // Toggle state
+        const wasChecked = checkbox.getAttribute('data-current-state') === 'true'
+        const isChecked = !wasChecked
+        
+        // Update visual state immediately (optimistic update)
+        checkbox.checked = isChecked
+        checkbox.setAttribute('data-current-state', isChecked)
+        
+        // Send update to server
+        this.pushEvent("toggle_description_checkbox", {
+          "todo-id": todoId,
+          "checkbox-index": checkboxIndex,
+          "checked": isChecked.toString()
+        })
+      }, true)
     })
   }
 }
+
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {

@@ -44,7 +44,8 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:todo_chat_messages, [])
      |> assign(:todo_conversations, [])
      |> assign(:current_todo_conversation, nil)
-     |> assign(:layout_expanded, nil)}
+     |> assign(:layout_expanded, nil)
+     |> assign(:checkbox_update_trigger, 0)}
   end
 
   @impl true
@@ -147,6 +148,51 @@ defmodule LifeOrgWeb.OrganizerLive do
     
     todos = update_todo_in_list(socket.assigns.todos, updated_todo)
     {:noreply, assign(socket, :todos, todos)}
+  end
+
+  @impl true
+  def handle_event("toggle_description_checkbox", params, socket) do
+    %{"todo-id" => todo_id, "checkbox-index" => checkbox_index, "checked" => checked_str} = params
+    todo = Repo.get!(Todo, String.to_integer(todo_id))
+    
+    # checkbox_index might already be an integer from JavaScript
+    checkbox_index = if is_integer(checkbox_index), do: checkbox_index, else: String.to_integer(checkbox_index)
+    checked = checked_str == "true"
+    
+    case update_description_checkbox(todo.description, checkbox_index, checked) do
+      {:ok, updated_description} ->
+        {:ok, updated_todo} = WorkspaceService.update_todo(todo, %{description: updated_description})
+        
+        # Update both todos list and viewing_todo if it's the same
+        todos = update_todo_in_list(socket.assigns.todos, updated_todo)
+        
+        socket = socket
+        |> assign(:todos, todos)
+        
+        # If we're viewing this todo, update it and keep modal open
+        socket = if socket.assigns[:viewing_todo] && socket.assigns.viewing_todo.id == updated_todo.id do
+          socket
+          |> assign(:viewing_todo, updated_todo)
+          |> push_event("checkbox_toggle_complete", %{
+            todo_id: todo.id,
+            checkbox_index: checkbox_index,
+            checked: checked
+          })
+          |> push_event("show_modal", %{id: "view-todo-modal"})
+        else
+          socket
+          |> push_event("checkbox_toggle_complete", %{
+            todo_id: todo.id,
+            checkbox_index: checkbox_index,
+            checked: checked
+          })
+        end
+        
+        {:noreply, socket}
+      
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to update checkbox: #{reason}")}
+    end
   end
 
   @impl true
@@ -584,8 +630,6 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("show_add_comment_form", %{"todo-id" => todo_id}, socket) do
-    viewing_todo_id = if socket.assigns[:viewing_todo], do: socket.assigns.viewing_todo.id, else: nil
-    IO.inspect({:show_comment_form, todo_id, viewing_todo_id}, label: "DEBUG")
     
     {:noreply,
      socket
@@ -1053,6 +1097,33 @@ defmodule LifeOrgWeb.OrganizerLive do
     |> assign(:todos, updated_todos)
     |> assign(:viewing_todo, viewing_todo)
     |> assign(:todo_conversations, conversations)
+  end
+
+  # Helper function to update a checkbox in todo description markdown
+  defp update_description_checkbox(description, checkbox_index, checked) do
+    if description && String.trim(description) != "" do
+      lines = String.split(description, "\n")
+      {updated_lines, _} = Enum.map_reduce(lines, 0, fn line, checkbox_count ->
+        if String.contains?(line, "- [") do
+          if checkbox_count == checkbox_index do
+            # This is the checkbox we want to update
+            if checked do
+              {String.replace(line, "- [ ]", "- [x]", global: false), checkbox_count + 1}
+            else
+              {String.replace(line, "- [x]", "- [ ]", global: false), checkbox_count + 1}
+            end
+          else
+            {line, checkbox_count + 1}
+          end
+        else
+          {line, checkbox_count}
+        end
+      end)
+      
+      {:ok, Enum.join(updated_lines, "\n")}
+    else
+      {:error, "No description to update"}
+    end
   end
 
 end

@@ -142,6 +142,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               todo_chat_messages={Map.get(assigns, :todo_chat_messages, [])}
               todo_conversations={Map.get(assigns, :todo_conversations, [])}
               current_todo_conversation={Map.get(assigns, :current_todo_conversation)}
+              checkbox_update_trigger={Map.get(assigns, :checkbox_update_trigger, 0)}
             />
           </.modal>
         <% end %>
@@ -210,7 +211,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </button>
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
-          <p class="text-sm text-gray-600 mt-1"><%= @todo.description %></p>
+          <div class="text-sm text-gray-600 mt-1">
+            <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+          </div>
         <% end %>
         <div class="flex items-center gap-2 mt-2">
           <%= if @todo.priority do %>
@@ -293,7 +296,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </div>
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
-          <p class="text-sm text-gray-600 mt-1"><%= @todo.description %></p>
+          <div class="text-sm text-gray-600 mt-1">
+            <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+          </div>
         <% end %>
         <div class="flex items-center gap-2 mt-2">
           <%= if @todo.priority do %>
@@ -613,11 +618,13 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         
         <!-- Description -->
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
-          <div class="bg-gray-50 rounded-lg p-4 mb-6">
+          <div id={"todo-view-description-#{@todo.id}"} class="bg-gray-50 rounded-lg p-4 mb-6" phx-hook="InteractiveCheckboxes">
             <h3 class="text-lg font-semibold text-gray-800 mb-3">Description</h3>
             <div class="prose prose-sm prose-gray max-w-none">
-              <%= raw(Earmark.as_html!(@todo.description)) %>
+              <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
             </div>
+            <!-- Hidden trigger to force re-render when checkboxes change -->
+            <span style="display: none;" id={"trigger-#{@todo.id}"}><%= Map.get(assigns, :checkbox_update_trigger, 0) %></span>
           </div>
         <% end %>
         
@@ -806,5 +813,54 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     |> Enum.flat_map(fn todo -> todo.tags || [] end)
     |> Enum.uniq()
     |> Enum.sort()
+  end
+
+  defp render_interactive_description(description, todo_id) do
+    # Convert markdown to HTML first
+    html = Earmark.as_html!(description)
+    
+    # Transform checkboxes to be interactive
+    make_checkboxes_interactive(html, todo_id)
+  end
+
+  defp make_checkboxes_interactive(html, todo_id) do
+    # Handle the case where Earmark puts checkbox text on the next line after <li>
+    lines = String.split(html, "\n")
+    
+    {processed_lines, _} = Enum.map_reduce(lines, 0, fn line, checkbox_index ->
+      trimmed_line = String.trim(line)
+      cond do
+        String.starts_with?(trimmed_line, "[ ]") ->
+          # Unchecked checkbox on its own line
+          updated_line = String.replace(line, "[ ]", 
+            "<input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">", 
+            global: false)
+          {updated_line, checkbox_index + 1}
+        
+        String.starts_with?(trimmed_line, "[x]") or String.starts_with?(trimmed_line, "[X]") ->
+          # Checked checkbox on its own line
+          updated_line = String.replace(line, ~r/\[x\]|\[X\]/i, 
+            "<input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">")
+          {updated_line, checkbox_index + 1}
+        
+        String.contains?(line, "<li>[ ]") ->
+          # Unchecked checkbox inline with <li>
+          updated_line = String.replace(line, "<li>[ ]", 
+            "<li><input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">", 
+            global: false)
+          {updated_line, checkbox_index + 1}
+        
+        String.contains?(line, "<li>[x]") or String.contains?(line, "<li>[X]") ->
+          # Checked checkbox inline with <li>
+          updated_line = String.replace(line, ~r/<li>\[x\]|<li>\[X\]/i, 
+            "<li><input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">")
+          {updated_line, checkbox_index + 1}
+        
+        true ->
+          {line, checkbox_index}
+      end
+    end)
+    
+    Enum.join(processed_lines, "\n")
   end
 end

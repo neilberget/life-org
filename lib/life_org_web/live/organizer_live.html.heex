@@ -216,7 +216,11 @@
             <!-- View Todo Modal -->
             <%= if Map.get(assigns, :viewing_todo) do %>
               <LifeOrgWeb.Components.ModalComponent.modal id="view-todo-modal" title="Todo Details" size="large">
-                <LifeOrgWeb.Components.TodoComponent.todo_view todo={@viewing_todo} comments={Map.get(assigns, :todo_comments, [])} />
+                <LifeOrgWeb.Components.TodoComponent.todo_view 
+                  todo={@viewing_todo} 
+                  comments={Map.get(assigns, :todo_comments, [])}
+                  checkbox_update_trigger={Map.get(assigns, :checkbox_update_trigger, 0)}
+                />
               </LifeOrgWeb.Components.ModalComponent.modal>
             <% end %>
           </div>
