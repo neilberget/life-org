@@ -23,7 +23,6 @@ defmodule LifeOrgWeb.Components.ModalComponent do
       id={@id}
       class={"fixed inset-0 #{@z_index_class} overflow-y-auto"}
       style="display: none;"
-      phx-click-away={hide_modal(@id)}
     >
       <!-- Backdrop -->
       <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>

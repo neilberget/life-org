@@ -8,6 +8,10 @@ defmodule LifeOrg.WorkspaceService do
     |> Repo.all()
   end
 
+  def get_workspace(id) do
+    Repo.get(Workspace, id)
+  end
+
   def get_workspace!(id) do
     Repo.get!(Workspace, id)
   end

@@ -287,9 +287,8 @@ defmodule LifeOrg.AIHandler do
   end
   
   defp maybe_add(map, _key, value) when value == "" or is_nil(value), do: map
-  defp maybe_add(map, key, value), do: Map.put(map, key, value)
-  
   defp maybe_add(map, key, value) when is_list(value) and value != [], do: Map.put(map, key, value)
+  defp maybe_add(map, key, value), do: Map.put(map, key, value)
   
   defp get_unique_tags(todos) do
     todos
@@ -321,6 +320,285 @@ defmodule LifeOrg.AIHandler do
       nil -> {:error, "Todo not found"}
       todo ->
         WorkspaceService.update_todo(todo, %{"completed" => true})
+    end
+  end
+
+  def process_todo_message(message, todo, todo_comments, all_todos, journal_entries, conversation_history \\ []) do
+    IO.puts("Building todo-specific system prompt...")
+    system_prompt = build_todo_system_prompt(todo, todo_comments, all_todos, journal_entries)
+    IO.puts("Todo system prompt built: #{String.length(system_prompt)} characters")
+    
+    # Define available tools for todo conversations
+    tools = build_todo_tools_definition(todo, all_todos)
+    
+    # Combine conversation history with new message
+    messages = conversation_history ++ [%{role: "user", content: message}]
+    IO.puts("Total messages in todo conversation: #{length(messages)}")
+    
+    IO.puts("Sending todo message to Anthropic API...")
+    case AnthropicClient.send_message(messages, system_prompt, tools) do
+      {:ok, response} ->
+        IO.puts("Got response from API: #{inspect(response)}")
+        content_blocks = AnthropicClient.extract_content_from_response(response)
+        
+        # Extract text message and tool uses separately
+        assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+        tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
+        
+        # Convert tool uses to our action format for todo operations
+        tool_actions = Enum.map(tool_uses, &convert_todo_tool_use_to_action(&1, todo, all_todos))
+        
+        {:ok, assistant_message, tool_actions}
+        
+      {:error, error} ->
+        IO.puts("API error: #{inspect(error)}")
+        {:error, "Sorry, I encountered an error: #{error}"}
+    end
+  end
+
+  defp build_todo_system_prompt(todo, todo_comments, all_todos, journal_entries) do
+    # Format the current todo details
+    todo_details = format_todo_details(todo)
+    
+    # Format todo comments
+    comments_context = format_todo_comments(todo_comments)
+    
+    # Find related todos (by tags or keywords)
+    related_todos = find_related_todos(todo, all_todos)
+    related_context = format_related_todos(related_todos)
+    
+    # Recent journal entries for life context
+    recent_entries = Enum.take(journal_entries, 3)
+    entries_context = format_journal_entries(recent_entries)
+    
+    # Get existing tags for context
+    existing_tags = get_unique_tags(all_todos)
+    tags_context = case existing_tags do
+      [] -> "No existing tags."
+      tags -> "Available tags: " <> Enum.join(tags, ", ")
+    end
+    
+    """
+    You are a helpful personal assistant focused on helping with a specific todo item. You understand the user's broader life context but specialize in providing targeted advice, suggestions, and task management for the current todo.
+
+    CURRENT TODO:
+    #{todo_details}
+
+    TODO COMMENTS & DISCUSSION:
+    #{comments_context}
+
+    RELATED TODOS:
+    #{related_context}
+
+    RECENT LIFE CONTEXT:
+    #{entries_context}
+
+    #{tags_context}
+
+    You can help with:
+    - Breaking down complex tasks into smaller steps
+    - Providing suggestions and recommendations based on the todo content
+    - Managing todo details (priority, tags, descriptions, due dates)
+    - Offering contextual advice based on journal entries and previous comments
+    - Creating related or follow-up todos
+    - Understanding progress and obstacles from the comment history
+
+    Be supportive and provide actionable advice specific to this todo. Use the available tools when the user wants to modify the todo or create related tasks.
+    """
+  end
+
+  defp format_todo_details(todo) do
+    due_info = case {todo.due_date, todo.due_time} do
+      {nil, _} -> ""
+      {date, nil} -> " | Due: #{date}"
+      {date, time} -> " | Due: #{date} at #{time}"
+    end
+    
+    status = if todo.completed, do: "✓ COMPLETED", else: "○ PENDING"
+    priority = String.upcase(todo.priority || "medium")
+    
+    tags_info = case todo.tags do
+      nil -> ""
+      [] -> ""
+      tags -> " | Tags: " <> Enum.join(tags, ", ")
+    end
+    
+    description = if todo.description && String.trim(todo.description) != "" do
+      "\nDescription: #{todo.description}"
+    else
+      ""
+    end
+    
+    """
+    ID: #{todo.id} | #{status} | Priority: #{priority} | Title: #{todo.title}#{due_info}#{tags_info}#{description}
+    """
+  end
+
+  defp format_todo_comments(comments) do
+    case comments do
+      [] -> "No comments yet on this todo."
+      _ ->
+        formatted_comments = Enum.map_join(comments, "\n\n", fn comment ->
+          date = Calendar.strftime(comment.inserted_at, "%B %d, %Y at %I:%M %p")
+          "#{date}: #{comment.content}"
+        end)
+        "Comment history:\n#{formatted_comments}"
+    end
+  end
+
+  defp find_related_todos(target_todo, all_todos) do
+    target_tags = target_todo.tags || []
+    
+    all_todos
+    |> Enum.filter(fn todo -> 
+      todo.id != target_todo.id && 
+      todo.tags != nil && 
+      length(todo.tags) > 0 &&
+      Enum.any?(todo.tags, fn tag -> tag in target_tags end)
+    end)
+    |> Enum.take(5) # Limit to 5 most relevant
+  end
+
+  defp format_related_todos(related_todos) do
+    case related_todos do
+      [] -> "No related todos found."
+      _ ->
+        formatted = Enum.map_join(related_todos, "\n", fn todo ->
+          status = if todo.completed, do: "✓", else: "○"
+          priority = String.upcase(todo.priority || "medium")
+          tags = if todo.tags, do: " [#{Enum.join(todo.tags, ", ")}]", else: ""
+          "#{status} [#{priority}] #{todo.title}#{tags}"
+        end)
+        "Related todos:\n#{formatted}"
+    end
+  end
+
+  defp format_journal_entries(entries) do
+    case entries do
+      [] -> "No recent journal entries."
+      _ ->
+        formatted = Enum.map_join(entries, "\n\n", fn entry ->
+          date = Calendar.strftime(entry.inserted_at, "%B %d, %Y")
+          mood = if entry.mood && entry.mood != "", do: " (#{entry.mood})", else: ""
+          "#{date}#{mood}: #{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
+        end)
+        "Recent journal entries:\n#{formatted}"
+    end
+  end
+
+  defp build_todo_tools_definition(_todo, all_todos) do
+    existing_tags = get_unique_tags(all_todos)
+    
+    [
+      %{
+        "name" => "create_related_todo",
+        "description" => "Create a new todo related to the current one",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "title" => %{
+              "type" => "string",
+              "description" => "The title of the new todo"
+            },
+            "description" => %{
+              "type" => "string",
+              "description" => "Optional description with more details"
+            },
+            "priority" => %{
+              "type" => "string",
+              "enum" => ["high", "medium", "low"],
+              "description" => "Priority level of the todo"
+            },
+            "tags" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "Tags to categorize the todo. Available tags: #{Enum.join(existing_tags, ", ")}"
+            }
+          },
+          "required" => ["title"]
+        }
+      },
+      %{
+        "name" => "update_current_todo",
+        "description" => "Update the current todo being discussed",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "title" => %{
+              "type" => "string",
+              "description" => "New title for the todo"
+            },
+            "description" => %{
+              "type" => "string",
+              "description" => "New description for the todo"
+            },
+            "priority" => %{
+              "type" => "string",
+              "enum" => ["high", "medium", "low"],
+              "description" => "New priority level"
+            },
+            "tags" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "New tags for the todo"
+            },
+            "due_date" => %{
+              "type" => "string",
+              "format" => "date",
+              "description" => "Due date in YYYY-MM-DD format"
+            }
+          },
+          "required" => []
+        }
+      },
+      %{
+        "name" => "complete_current_todo",
+        "description" => "Mark the current todo as completed",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "completion_note" => %{
+              "type" => "string",
+              "description" => "Optional note about the completion"
+            }
+          },
+          "required" => []
+        }
+      }
+    ]
+  end
+
+  defp convert_todo_tool_use_to_action(tool_use, current_todo, _all_todos) do
+    case tool_use.name do
+      "create_related_todo" ->
+        %{
+          action: :create_todo,
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          priority: tool_use.input["priority"] || "medium",
+          tags: tool_use.input["tags"] || []
+        }
+        
+      "update_current_todo" ->
+        updates = %{}
+        |> maybe_add("title", tool_use.input["title"])
+        |> maybe_add("description", tool_use.input["description"])
+        |> maybe_add("priority", tool_use.input["priority"])
+        |> maybe_add("tags", tool_use.input["tags"])
+        |> maybe_add("due_date", tool_use.input["due_date"])
+        
+        %{
+          action: :update_todo,
+          id: current_todo.id,
+          updates: updates
+        }
+        
+      "complete_current_todo" ->
+        %{
+          action: :complete_todo,
+          id: current_todo.id,
+          completion_note: tool_use.input["completion_note"]
+        }
     end
   end
 end

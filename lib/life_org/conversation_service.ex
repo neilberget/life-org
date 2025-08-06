@@ -2,9 +2,9 @@ defmodule LifeOrg.ConversationService do
   alias LifeOrg.{Repo, Conversation, ChatMessage}
   import Ecto.Query
 
-  def create_conversation(title) do
+  def create_conversation(title, workspace_id \\ nil, todo_id \\ nil) do
     %Conversation{}
-    |> Conversation.changeset(%{title: title})
+    |> Conversation.changeset(%{title: title, workspace_id: workspace_id, todo_id: todo_id})
     |> Repo.insert()
   end
 
@@ -60,5 +60,32 @@ defmodule LifeOrg.ConversationService do
     |> order_by([m], asc: m.inserted_at)
     |> Repo.all()
     |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+  end
+
+  def list_todo_conversations(todo_id) do
+    Conversation
+    |> where([c], c.todo_id == ^todo_id)
+    |> order_by([c], desc: c.updated_at)
+    |> preload(:chat_messages)
+    |> Repo.all()
+  end
+
+  def get_or_create_todo_conversation(todo_id, workspace_id, first_message) do
+    # Try to find an existing conversation for this todo
+    case list_todo_conversations(todo_id) do
+      [] ->
+        # No existing conversations, create new one
+        title = "Chat about: #{first_message |> String.slice(0, 30)}..."
+        create_conversation(title, workspace_id, todo_id)
+      
+      [conversation | _] ->
+        # Use most recent conversation
+        {:ok, conversation}
+    end
+  end
+
+  def create_new_todo_conversation(todo_id, workspace_id, first_message) do
+    title = "Chat: #{first_message |> String.slice(0, 30)}..."
+    create_conversation(title, workspace_id, todo_id)
   end
 end

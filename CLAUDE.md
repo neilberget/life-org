@@ -25,13 +25,16 @@ journal_entries:
 - id, content (text), mood, entry_date, tags (JSON), timestamps
 
 todos:
-- id, title, description, completed, priority, due_date, ai_generated, timestamps
+- id, title, description, completed, priority, due_date, due_time, ai_generated, tags (JSON), workspace_id, timestamps
 
 conversations:
-- id, title, timestamps
+- id, title, workspace_id, todo_id (nullable), timestamps
 
 chat_messages:
 - id, conversation_id, role, content, timestamps
+
+todo_comments:
+- id, todo_id, content, timestamps
 ```
 
 ### Key Features
@@ -165,6 +168,64 @@ mix phx.server
 - Database schema should be thoughtfully designed from the start
 - Modal interfaces provide excellent UX for editing operations
 
+## Current Implementation Details
+
+### Todo Management System
+- **Manual Todo Creation**: "+" icon button in todo header opens modal form
+- **Todo Fields**: title, description, tags (comma-separated), priority (low/medium/high), due_date, due_time
+- **Todo Comments**: Each todo supports threaded comments with markdown rendering
+- **Tag Filtering**: Filter dropdown allows filtering todos by tags
+- **Incoming Todos**: Special section for AI-extracted todos from journal entries (blue banner)
+- **Todo Views**: Click todo to view details, hover to see edit/delete buttons
+- **Workspace Support**: Todos are scoped to workspaces (default workspace auto-created)
+
+### LiveView Event Handlers (organizer_live.ex)
+- `add_todo`: Opens the add todo modal
+- `create_todo`: Creates new todo with form data
+- `edit_todo`: Opens edit modal for existing todo
+- `update_todo`: Updates existing todo
+- `delete_todo`: Deletes a todo
+- `toggle_todo`: Marks todo as complete/incomplete
+- `view_todo`: Opens detailed view modal
+- `add_todo_comment`: Adds comment to todo
+- `filter_by_tag`: Filters todos by selected tag
+- `accept_incoming_todos`: Accepts AI-extracted todos
+- `dismiss_incoming_todos`: Deletes all incoming todos
+
+### Component Architecture
+- **TodoComponent** (`todo_component.ex`): Handles all todo UI rendering
+- **Modal System**: Reusable modal component for forms and views
+- **Form Components**: `add_todo_form`, `edit_todo_form` with consistent styling
+- **Priority Classes**: Visual distinction with colors (red=high, yellow=medium, green=low)
+
+### Database Schema Extensions
+- **todos table**: workspace_id, due_time, tags (JSON array)
+- **todo_comments table**: Links comments to todos
+- **conversations table**: Added todo_id for todo-specific conversations
+- **Workspace scoping**: All entities (todos, journal, conversations) belong to workspaces
+
+### Workspace Persistence
+- **localStorage Integration**: Selected workspace persists across sessions using localStorage
+- **JavaScript Hook**: `WorkspacePersistence` hook manages localStorage read/write
+- **LiveView Events**: 
+  - `load_saved_workspace`: Loads persisted workspace on mount
+  - `workspace_changed`: Pushed to client to trigger localStorage save
+- **WorkspaceService Functions**:
+  - `get_workspace/1`: Safe workspace lookup (returns nil if not found)
+  - `get_workspace!/1`: Raises if workspace not found
+
+### Journal Todo Extraction Processing State
+- **Background Processing**: Journal entries are processed by AI in background tasks to extract todos
+- **Non-blocking UI**: Processing state is tracked with `processing_journal_todos` assign
+- **Visual Indicators**: 
+  - Submit button shows spinner and "Processing..." text during extraction
+  - Button is disabled to prevent duplicate submissions
+  - Helpful message appears: "Extracting todos from your journal entry..."
+- **State Management**:
+  - Set to `true` when journal entry is created and background task starts
+  - Set to `false` when `handle_info({:extracted_todos, ...})` completes
+  - Handled in both success and failure cases to prevent stuck states
+
 ## Future Enhancement Opportunities
 
 - Search functionality for journal entries
@@ -174,5 +235,27 @@ mix phx.server
 - Mobile responsiveness improvements
 - Advanced AI tool calling (calendar integration, reminders)
 
+### Todo-Based AI Chat Architecture
+- **Context-Aware AI**: AI knows the specific todo, its comments, related todos, and recent journal entries
+- **Conversation Persistence**: Each todo can have multiple persistent chat conversations
+- **Tool Integration**: AI can directly modify todos (update fields, complete tasks, create related todos)
+- **Modal State Management**: Critical to use `push_event("show_modal")` after state changes to prevent modal closing
+- **Two-Column Layout**: Todo details (left) and chat interface (right) when chat is active
+- **Specialized Tools**: `create_related_todo`, `update_current_todo`, `complete_current_todo` for focused todo operations
+- **Empty Response Handling**: Tool-only AI responses (no text) require special handling to avoid database validation errors
+
+### Modal System Best Practices
+- **Click-away behavior**: Temporarily disabled during complex interactions to prevent unexpected modal closing
+- **State preservation**: Always ensure `viewing_todo` assign is maintained across state changes
+- **Loading states**: Show immediate feedback with loading indicators for all async operations
+- **Error resilience**: Handle both AI errors and tool execution failures gracefully
+- **Modal Sizing**: Todo form modals use "large" size (max-w-4xl) to provide adequate space for longer descriptions
+- **Form UX**: Description textareas are tall (h-40) and vertically resizable to accommodate varying content lengths
+
 ## Development Notes
 - I'm always running mix phx.server in another tab
+- No compiler warnings should be present
+- Forms handle empty optional fields gracefully (converted to nil)
+- Tags are processed from comma-separated input into JSON arrays
+- **AI responses**: Use Earmark for markdown rendering, handle empty responses for tool-only calls
+- **Background tasks**: All AI processing happens asynchronously to avoid blocking the UI

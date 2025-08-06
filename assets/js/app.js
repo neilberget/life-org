@@ -24,6 +24,22 @@ import topbar from "../vendor/topbar"
 
 let Hooks = {}
 
+// Workspace persistence hook
+Hooks.WorkspacePersistence = {
+  mounted() {
+    // Send the saved workspace ID to the server on mount
+    const savedWorkspaceId = localStorage.getItem("selectedWorkspaceId")
+    if (savedWorkspaceId) {
+      this.pushEvent("load_saved_workspace", {workspace_id: savedWorkspaceId})
+    }
+    
+    // Listen for workspace changes to save them
+    this.handleEvent("workspace_changed", ({workspace_id}) => {
+      localStorage.setItem("selectedWorkspaceId", workspace_id)
+    })
+  }
+}
+
 // Global modal and UI event handlers
 Hooks.GlobalEvents = {
   mounted() {
@@ -107,6 +123,44 @@ Hooks.ClearJournalForm = {
         const today = new Date().toISOString().split('T')[0]
         dateField.value = today
       }
+    })
+  }
+}
+
+// Interactive checkbox handler for todo descriptions
+Hooks.InteractiveCheckboxes = {
+  mounted() {
+    this.setupCheckboxListeners()
+  },
+  
+  updated() {
+    this.setupCheckboxListeners()
+  },
+  
+  setupCheckboxListeners() {
+    // Find all checkboxes in todo descriptions and make them interactive
+    const checkboxes = this.el.querySelectorAll('input[type="checkbox"][data-todo-checkbox]')
+    
+    checkboxes.forEach(checkbox => {
+      // Remove existing listeners to avoid duplicates
+      checkbox.removeEventListener('change', this.handleCheckboxChange.bind(this))
+      
+      // Add new listener
+      checkbox.addEventListener('change', this.handleCheckboxChange.bind(this))
+    })
+  },
+  
+  handleCheckboxChange(event) {
+    const checkbox = event.target
+    const todoId = checkbox.getAttribute('data-todo-id')
+    const checkboxIndex = parseInt(checkbox.getAttribute('data-checkbox-index'))
+    const isChecked = checkbox.checked
+    
+    // Push event to LiveView to update the todo description
+    this.pushEvent("toggle_description_checkbox", {
+      todo_id: todoId,
+      checkbox_index: checkboxIndex,
+      checked: isChecked
     })
   }
 }

@@ -1,4 +1,5 @@
 <div class="flex flex-col h-screen bg-gray-50" phx-hook="GlobalEvents" id="main-container">
+  <div phx-hook="WorkspacePersistence" id="workspace-persistence"></div>
   <!-- Workspace Selector Header -->
   <div class="bg-white border-b border-gray-200 px-6 py-4">
     <div class="flex items-center justify-between">
@@ -117,7 +118,7 @@
             </button>
           </div>
           
-          <LifeOrgWeb.Components.JournalComponent.journal_form />
+          <LifeOrgWeb.Components.JournalComponent.journal_form processing_journal_todos={@processing_journal_todos} />
           <LifeOrgWeb.Components.JournalComponent.journal_entries entries={@journal_entries} />
           
           <!-- Edit Journal Entry Modal -->
@@ -169,15 +170,26 @@
                 <% end %>
               </div>
               
-              <button
-                phx-click="return_to_normal_layout"
-                class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Return to normal layout"
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M15 15h4.5M15 15v4.5m0 0l5.5 5.5"></path>
-                </svg>
-              </button>
+              <div class="flex gap-2">
+                <button
+                  phx-click="add_todo"
+                  class="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Add new todo"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                  </svg>
+                </button>
+                <button
+                  phx-click="return_to_normal_layout"
+                  class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Return to normal layout"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M15 15h4.5M15 15v4.5m0 0l5.5 5.5"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
             
             <!-- Incoming Todos Section -->
@@ -194,6 +206,13 @@
               </LifeOrgWeb.Components.ModalComponent.modal>
             <% end %>
             
+            <!-- Add Todo Modal -->
+            <%= if Map.get(assigns, :adding_todo, false) do %>
+              <LifeOrgWeb.Components.ModalComponent.modal id="add-todo-modal" title="Add New Todo" z_index="high">
+                <LifeOrgWeb.Components.TodoComponent.add_todo_form />
+              </LifeOrgWeb.Components.ModalComponent.modal>
+            <% end %>
+            
             <!-- View Todo Modal -->
             <%= if Map.get(assigns, :viewing_todo) do %>
               <LifeOrgWeb.Components.ModalComponent.modal id="view-todo-modal" title="Todo Details" size="large">
@@ -207,6 +226,7 @@
         <JournalComponent.journal_column 
           entries={@journal_entries} 
           editing_entry={@editing_entry}
+          processing_journal_todos={@processing_journal_todos}
         />
         <TodoComponent.todo_column 
           todos={filter_todos_by_tag(@todos, @tag_filter)}
@@ -214,6 +234,7 @@
           tag_filter={@tag_filter}
           incoming_todos={@incoming_todos}
           editing_todo={@editing_todo}
+          adding_todo={@adding_todo}
           viewing_todo={@viewing_todo}
           todo_comments={@todo_comments}
           show_comment_form={@show_comment_form}

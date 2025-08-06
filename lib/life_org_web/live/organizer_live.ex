@@ -28,6 +28,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:processing_message, false)
      |> assign(:editing_entry, nil)
      |> assign(:editing_todo, nil)
+     |> assign(:adding_todo, false)
      |> assign(:editing_workspace, nil)
      |> assign(:show_workspace_form, false)
      |> assign(:show_ai_sidebar, false)
@@ -36,10 +37,13 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:viewing_todo, nil)
      |> assign(:todo_comments, [])
      |> assign(:show_comment_form, false)
+     |> assign(:processing_journal_todos, false)
      |> assign(:comment_todo_id, nil)
      |> assign(:show_todo_chat, false)
      |> assign(:chat_todo_id, nil)
      |> assign(:todo_chat_messages, [])
+     |> assign(:todo_conversations, [])
+     |> assign(:current_todo_conversation, nil)
      |> assign(:layout_expanded, nil)}
   end
 
@@ -62,6 +66,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         {:noreply,
          socket
          |> assign(:journal_entries, entries)
+         |> assign(:processing_journal_todos, true)
          |> push_event("clear_journal_form", %{})
          |> put_flash(:info, "Journal entry created successfully")}
 
@@ -77,6 +82,38 @@ defmodule LifeOrgWeb.OrganizerLive do
     
     entries = Enum.reject(socket.assigns.journal_entries, &(&1.id == String.to_integer(id)))
     {:noreply, assign(socket, :journal_entries, entries)}
+  end
+
+  @impl true
+  def handle_event("load_saved_workspace", %{"workspace_id" => workspace_id}, socket) do
+    # Try to load the saved workspace, fall back to current if not found
+    workspace = 
+      case WorkspaceService.get_workspace(String.to_integer(workspace_id)) do
+        nil -> socket.assigns.current_workspace
+        ws -> ws
+      end
+    
+    if workspace.id != socket.assigns.current_workspace.id do
+      # Load data for the saved workspace
+      journal_entries = WorkspaceService.list_journal_entries(workspace.id)
+      todos = WorkspaceService.list_todos(workspace.id) |> sort_todos()
+      conversations = WorkspaceService.list_conversations(workspace.id)
+      
+      {:noreply,
+       socket
+       |> assign(:current_workspace, workspace)
+       |> assign(:journal_entries, journal_entries)
+       |> assign(:todos, todos)
+       |> assign(:incoming_todos, [])
+       |> assign(:conversations, conversations)
+       |> assign(:current_conversation, nil)
+       |> assign(:chat_messages, [])
+       |> assign(:tag_filter, nil)
+       |> assign(:viewing_todo, nil)
+       |> assign(:todo_comments, [])}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -97,7 +134,10 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:conversations, conversations)
      |> assign(:current_conversation, nil)
      |> assign(:chat_messages, [])
-     |> assign(:tag_filter, nil)}
+     |> push_event("workspace_changed", %{workspace_id: workspace.id})
+     |> assign(:tag_filter, nil)
+     |> assign(:viewing_todo, nil)
+     |> assign(:todo_comments, [])}
   end
 
   @impl true
@@ -139,6 +179,39 @@ defmodule LifeOrgWeb.OrganizerLive do
 
       {:error, %Ecto.Changeset{} = _changeset} ->
         {:noreply, put_flash(socket, :error, "Error updating journal entry")}
+    end
+  end
+
+  @impl true
+  def handle_event("add_todo", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:adding_todo, true)
+     |> push_event("show_modal", %{id: "add-todo-modal"})}
+  end
+
+  @impl true
+  def handle_event("create_todo", %{"todo" => params}, socket) do
+    # Clean up empty strings for optional fields
+    cleaned_params = params
+    |> Map.update("description", nil, fn desc -> if String.trim(desc || "") == "", do: nil, else: desc end)
+    |> Map.update("due_date", nil, fn date -> if String.trim(date || "") == "", do: nil, else: date end)
+    |> Map.update("due_time", nil, fn time -> if String.trim(time || "") == "", do: nil, else: time end)
+    |> process_tags_input()
+    
+    case WorkspaceService.create_todo(cleaned_params, socket.assigns.current_workspace.id) do
+      {:ok, todo} ->
+        todos = [todo | socket.assigns.todos] |> sort_todos()
+        
+        {:noreply,
+         socket
+         |> assign(:todos, todos)
+         |> assign(:adding_todo, false)
+         |> push_event("hide_modal", %{id: "add-todo-modal"})
+         |> put_flash(:info, "Todo created successfully")}
+
+      {:error, %Ecto.Changeset{} = _changeset} ->
+        {:noreply, put_flash(socket, :error, "Error creating todo")}
     end
   end
 
@@ -584,27 +657,47 @@ defmodule LifeOrgWeb.OrganizerLive do
     current_chat_todo = socket.assigns[:chat_todo_id]
     todo_id_int = String.to_integer(todo_id)
     
-    IO.inspect({:toggle_chat, current_chat_todo, todo_id_int, socket.assigns[:show_todo_chat]}, label: "CHAT_DEBUG")
-    
-    if current_chat_todo == todo_id_int do
-      # Close chat if it's already open for this todo
-      {:noreply,
-       socket
-       |> assign(:show_todo_chat, false)
-       |> assign(:chat_todo_id, nil)
-       |> assign(:todo_chat_messages, [])
-       |> push_event("hide_todo_chat", %{todo_id: todo_id})
-       |> push_event("show_modal", %{id: "view-todo-modal"})}
+    # Ensure viewing_todo is set - if not, reload it
+    socket = if socket.assigns[:viewing_todo] == nil do
+      todo = Repo.get!(Todo, todo_id_int)
+      comments = Repo.all(from c in TodoComment, where: c.todo_id == ^todo_id_int, order_by: [desc: c.inserted_at])
+      |> Repo.preload([])
+      socket 
+      |> assign(:viewing_todo, todo) 
+      |> assign(:todo_comments, comments)
     else
-      # Open chat for this todo
-      {:noreply,
-       socket
-       |> assign(:show_todo_chat, true)
-       |> assign(:chat_todo_id, todo_id_int)
-       |> assign(:todo_chat_messages, [])
-       |> push_event("show_todo_chat", %{todo_id: todo_id})
-       |> push_event("show_modal", %{id: "view-todo-modal"})}
+      socket
     end
+    
+    socket = if current_chat_todo == todo_id_int do
+      # Close chat if it's already open for this todo
+      socket
+      |> assign(:show_todo_chat, false)
+      |> assign(:chat_todo_id, nil)
+      |> assign(:todo_chat_messages, [])
+      |> assign(:todo_conversations, [])
+      |> assign(:current_todo_conversation, nil)
+    else
+      # Open chat for this todo - load existing conversations
+      conversations = ConversationService.list_todo_conversations(todo_id_int)
+      
+      # Load messages from most recent conversation if exists
+      messages = case conversations do
+        [] -> []
+        [conversation | _] ->
+          conversation.chat_messages
+          |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+      end
+      
+      socket
+      |> assign(:show_todo_chat, true)
+      |> assign(:chat_todo_id, todo_id_int)
+      |> assign(:todo_conversations, conversations)
+      |> assign(:current_todo_conversation, List.first(conversations))
+      |> assign(:todo_chat_messages, messages)
+    end
+    
+    {:noreply, socket |> push_event("show_modal", %{id: "view-todo-modal"})}
   end
 
   @impl true
@@ -624,20 +717,99 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("send_todo_chat_message", %{"todo-id" => todo_id, "message" => message}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(todo_id))
+    todo_id_int = String.to_integer(todo_id)
+    todo = Repo.get!(Todo, todo_id_int)
+    workspace_id = socket.assigns.current_workspace.id
     
-    # Add user message to chat
+    # Get or create conversation for this todo
+    conversation = case socket.assigns[:current_todo_conversation] do
+      nil ->
+        {:ok, conv} = ConversationService.get_or_create_todo_conversation(todo_id_int, workspace_id, message)
+        conv
+      conv -> conv
+    end
+    
+    # Save user message
+    {:ok, _user_msg} = ConversationService.add_message_to_conversation(conversation.id, "user", message)
+    
+    # Show user message immediately with loading indicator
     current_messages = socket.assigns[:todo_chat_messages] || []
-    messages_with_user = current_messages ++ [%{role: "user", content: message}]
+    loading_message = %{role: "assistant", content: "Thinking...", loading: true}
+    messages_with_user_and_loading = current_messages ++ [%{role: "user", content: message}, loading_message]
     
-    # For now, add a simple response - you can integrate with your AI handler later
-    ai_response = "I understand you're asking about the todo '#{todo.title}'. This is a placeholder response - you can integrate this with your AI handler for more sophisticated responses."
+    socket = socket 
+    |> assign(:todo_chat_messages, messages_with_user_and_loading)
+    |> assign(:processing_message, true)
+    |> push_event("show_modal", %{id: "view-todo-modal"})
     
-    final_messages = messages_with_user ++ [%{role: "assistant", content: ai_response}]
+    # Start AI processing in background
+    parent_pid = self()
+    conversation_history = ConversationService.get_conversation_messages_for_ai(conversation.id)
+    
+    # Get todo comments for context
+    todo_comments = Repo.all(from c in TodoComment, where: c.todo_id == ^todo_id_int, order_by: [asc: c.inserted_at])
+    |> Repo.preload([])
+    
+    # Get all todos for context
+    all_todos = WorkspaceService.list_todos(workspace_id)
+    
+    Task.start(fn ->
+      try do
+        IO.puts("Starting todo-specific AI request...")
+        case AIHandler.process_todo_message(message, todo, todo_comments, all_todos, socket.assigns.journal_entries, conversation_history) do
+          {:ok, response, tool_actions} ->
+            IO.puts("Todo AI response received: #{inspect(response)}")
+            send(parent_pid, {:todo_ai_response, response, tool_actions, conversation.id, todo_id_int})
+          {:error, error} ->
+            IO.puts("Todo AI error: #{inspect(error)}")
+            send(parent_pid, {:todo_ai_error, error, conversation.id, todo_id_int})
+        end
+      rescue
+        error ->
+          IO.puts("Todo AI task error: #{inspect(error)}")
+          send(parent_pid, {:todo_ai_error, "Unexpected error occurred", conversation.id, todo_id_int})
+      end
+    end)
+    
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("switch_todo_conversation", %{"todo-id" => _todo_id, "value" => conversation_id}, socket) do
+    conversation_id_int = String.to_integer(conversation_id)
+    
+    # Find the conversation and load its messages
+    conversation = ConversationService.get_conversation_with_messages(conversation_id_int)
+    messages = conversation.chat_messages
+    |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
     
     {:noreply,
      socket
-     |> assign(:todo_chat_messages, final_messages)
+     |> assign(:current_todo_conversation, conversation)
+     |> assign(:todo_chat_messages, messages)
+     |> push_event("show_modal", %{id: "view-todo-modal"})}
+  end
+
+  @impl true
+  def handle_event("create_new_todo_conversation", %{"todo-id" => todo_id}, socket) do
+    todo_id_int = String.to_integer(todo_id)
+    workspace_id = socket.assigns.current_workspace.id
+    
+    # Create new conversation with placeholder message
+    {:ok, conversation} = ConversationService.create_new_todo_conversation(
+      todo_id_int, 
+      workspace_id, 
+      "New conversation"
+    )
+    
+    # Update conversations list and switch to new conversation
+    conversations = ConversationService.list_todo_conversations(todo_id_int)
+    
+    {:noreply,
+     socket
+     |> assign(:current_todo_conversation, conversation)
+     |> assign(:todo_conversations, conversations)
+     |> assign(:todo_chat_messages, [])
      |> push_event("show_modal", %{id: "view-todo-modal"})}
   end
 
@@ -691,6 +863,64 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_info({:todo_ai_response, response, tool_actions, conversation_id, todo_id}, socket) do
+    # Only save assistant response to database if there's actual content
+    # (AI might respond with only tool calls and no text)
+    if String.trim(response) != "" do
+      {:ok, _assistant_message} = ConversationService.add_message_to_conversation(
+        conversation_id, "assistant", response
+      )
+    end
+    
+    # Remove loading message
+    messages_without_loading = Enum.reject(socket.assigns[:todo_chat_messages] || [], &Map.get(&1, :loading, false))
+    
+    # Only add response message if there's content, otherwise show action confirmation
+    updated_messages = if String.trim(response) != "" do
+      messages_without_loading ++ [%{role: "assistant", content: response}]
+    else
+      # Show a confirmation message for tool-only responses
+      action_summary = case tool_actions do
+        [] -> "Action completed"
+        [%{action: :update_todo}] -> "Todo updated successfully"
+        [%{action: :create_todo}] -> "New todo created"
+        [%{action: :complete_todo}] -> "Todo marked as complete"
+        _ -> "Actions completed"
+      end
+      messages_without_loading ++ [%{role: "assistant", content: "✓ #{action_summary}"}]
+    end
+    
+    socket = socket
+    |> assign(:todo_chat_messages, updated_messages)
+    |> assign(:processing_message, false)
+    |> push_event("show_modal", %{id: "view-todo-modal"})
+    
+    # Execute any tool actions for todo operations
+    socket = if length(tool_actions) > 0 do
+      IO.puts("Executing #{length(tool_actions)} todo tool actions...")
+      execute_todo_tool_actions(socket, tool_actions, todo_id)
+    else
+      socket
+    end
+    
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:todo_ai_error, error, _conversation_id, _todo_id}, socket) do
+    # Remove loading message and show error
+    messages_without_loading = Enum.reject(socket.assigns[:todo_chat_messages] || [], &Map.get(&1, :loading, false))
+    error_message = %{role: "assistant", content: "Sorry, I encountered an error: #{error}"}
+    updated_messages = messages_without_loading ++ [error_message]
+    
+    {:noreply,
+     socket
+     |> assign(:todo_chat_messages, updated_messages)
+     |> assign(:processing_message, false)
+     |> push_event("show_modal", %{id: "view-todo-modal"})}
+  end
+
+  @impl true
   def handle_info({:extracted_todos, todo_actions, workspace_id}, socket) do
     # Only process if we're still in the same workspace
     if socket.assigns.current_workspace.id == workspace_id and length(todo_actions) > 0 do
@@ -717,6 +947,7 @@ defmodule LifeOrgWeb.OrganizerLive do
       
       socket = socket
       |> assign(:todos, sort_todos(updated_todos))
+      |> assign(:processing_journal_todos, false)
       |> (fn s -> if length(created_todos) > 0, do: assign(s, :incoming_todos, sort_todos(created_todos)), else: s end).()
       
       if flash_message do
@@ -725,7 +956,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         {:noreply, socket}
       end
     else
-      {:noreply, socket}
+      {:noreply, assign(socket, :processing_journal_todos, false)}
     end
   end
 
@@ -790,6 +1021,38 @@ defmodule LifeOrgWeb.OrganizerLive do
     |> Enum.flat_map(fn todo -> todo.tags || [] end)
     |> Enum.uniq()
     |> Enum.sort()
+  end
+
+  defp execute_todo_tool_actions(socket, tool_actions, _todo_id) do
+    updated_todos = Enum.reduce(tool_actions, socket.assigns.todos, fn action, todos ->
+      case AIHandler.execute_tool_action(action, socket.assigns.current_workspace.id) do
+        {:ok, todo} when action.action == :create_todo ->
+          [todo | todos] |> sort_todos()
+        {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
+          update_todo_in_list(todos, updated_todo)
+        _ ->
+          todos
+      end
+    end)
+    
+    # Update the viewing_todo if it was modified
+    viewing_todo = case socket.assigns[:viewing_todo] do
+      nil -> nil
+      current_todo ->
+        Enum.find(updated_todos, current_todo, fn todo -> todo.id == current_todo.id end)
+    end
+    
+    # Reload todo conversations list since we may have created new todos
+    conversations = if socket.assigns[:chat_todo_id] do
+      ConversationService.list_todo_conversations(socket.assigns.chat_todo_id)
+    else
+      socket.assigns[:todo_conversations] || []
+    end
+    
+    socket
+    |> assign(:todos, updated_todos)
+    |> assign(:viewing_todo, viewing_todo)
+    |> assign(:todo_conversations, conversations)
   end
 
 end

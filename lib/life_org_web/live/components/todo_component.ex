@@ -88,15 +88,26 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             <% end %>
           </div>
           
-          <button
-            phx-click="expand_todos"
-            class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Expand todos view"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-            </svg>
-          </button>
+          <div class="flex gap-2">
+            <button
+              phx-click="add_todo"
+              class="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Add new todo"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+              </svg>
+            </button>
+            <button
+              phx-click="expand_todos"
+              class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Expand todos view"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+              </svg>
+            </button>
+          </div>
         </div>
         
         <!-- Incoming Todos Section -->
@@ -108,15 +119,30 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         
         <!-- Edit Todo Modal -->
         <%= if Map.get(assigns, :editing_todo) do %>
-          <.modal id="edit-todo-modal" title="Edit Todo" z_index="high">
+          <.modal id="edit-todo-modal" title="Edit Todo" size="large" z_index="high">
             <.edit_todo_form todo={@editing_todo} />
+          </.modal>
+        <% end %>
+        
+        <!-- Add Todo Modal -->
+        <%= if Map.get(assigns, :adding_todo, false) do %>
+          <.modal id="add-todo-modal" title="Add New Todo" size="large" z_index="high">
+            <.add_todo_form />
           </.modal>
         <% end %>
         
         <!-- View Todo Modal -->
         <%= if Map.get(assigns, :viewing_todo) do %>
           <.modal id="view-todo-modal" title="Todo Details" size="large">
-            <.todo_view todo={@viewing_todo} comments={Map.get(assigns, :todo_comments, [])} />
+            <.todo_view 
+              todo={@viewing_todo} 
+              comments={Map.get(assigns, :todo_comments, [])}
+              show_todo_chat={Map.get(assigns, :show_todo_chat, false)}
+              chat_todo_id={Map.get(assigns, :chat_todo_id)}
+              todo_chat_messages={Map.get(assigns, :todo_chat_messages, [])}
+              todo_conversations={Map.get(assigns, :todo_conversations, [])}
+              current_todo_conversation={Map.get(assigns, :current_todo_conversation)}
+            />
           </.modal>
         <% end %>
       </div>
@@ -322,7 +348,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     
     ~H"""
     <form phx-submit="update_todo" phx-value-id={@todo.id}>
-      <div class="space-y-4">
+      <div class="space-y-6">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
           <input
@@ -338,7 +364,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
           <textarea
             name="todo[description]"
-            class="w-full p-3 border border-gray-300 rounded-lg resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="w-full p-3 border border-gray-300 rounded-lg resize-y h-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Optional description..."
           ><%= @todo.description || "" %></textarea>
         </div>
@@ -409,6 +435,93 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     """
   end
 
+  def add_todo_form(assigns) do
+    ~H"""
+    <form phx-submit="create_todo">
+      <div class="space-y-6">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
+          <input
+            type="text"
+            name="todo[title]"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+            autofocus
+          />
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+          <textarea
+            name="todo[description]"
+            class="w-full p-3 border border-gray-300 rounded-lg resize-y h-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Optional description..."
+          ></textarea>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+          <input
+            type="text"
+            name="todo[tags_input]"
+            placeholder="Enter tags separated by commas (e.g., work, urgent, project1)"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p class="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
+        </div>
+        
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+            <select
+              name="todo[priority]"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+            <input
+              type="date"
+              name="todo[due_date]"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Due Time</label>
+            <input
+              type="time"
+              name="todo[due_time]"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        
+        <div class="flex justify-end gap-3">
+          <button
+            type="button"
+            phx-click={hide_modal("add-todo-modal")}
+            class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Create Todo
+          </button>
+        </div>
+      </div>
+    </form>
+    """
+  end
+
   defp priority_class("high"), do: "bg-red-100 text-red-800"
   defp priority_class("medium"), do: "bg-yellow-100 text-yellow-800"
   defp priority_class("low"), do: "bg-green-100 text-green-800"
@@ -425,162 +538,235 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   end
   
   def todo_view(assigns) do
+    show_chat = Map.get(assigns, :show_todo_chat, false) && 
+                Map.get(assigns, :chat_todo_id) == assigns.todo.id
+
+    assigns = assign(assigns, :show_chat, show_chat)
+    
     ~H"""
-    <div class="space-y-6">
-      <!-- Todo Header -->
-      <div class="flex items-start justify-between">
-        <div class="flex-1">
-          <h2 class={"text-2xl font-bold #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
-            <%= @todo.title %>
-          </h2>
-          <div class="flex items-center gap-3 mt-2">
-            <span class={"px-3 py-1 rounded-full text-sm font-medium #{priority_class(@todo.priority)}"}>
-              <%= String.capitalize(@todo.priority || "medium") %>
-            </span>
-            <%= if @todo.due_date do %>
-              <span class="text-gray-600 flex items-center gap-1">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                </svg>
-                <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
+    <div class={"flex gap-6 #{if @show_chat, do: "h-[600px]", else: ""}"}>
+      <!-- Left Column: Todo Details -->
+      <div class={"#{if @show_chat, do: "w-1/2", else: "w-full"} #{if @show_chat, do: "overflow-y-auto pr-3", else: "space-y-6"}"}>
+        <!-- Todo Header -->
+        <div class="flex items-start justify-between mb-6">
+          <div class="flex-1">
+            <h2 class={"text-2xl font-bold #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
+              <%= @todo.title %>
+            </h2>
+            <div class="flex items-center gap-3 mt-2">
+              <span class={"px-3 py-1 rounded-full text-sm font-medium #{priority_class(@todo.priority)}"}>
+                <%= String.capitalize(@todo.priority || "medium") %>
               </span>
-            <% end %>
-            <%= if @todo.completed do %>
-              <span class="text-green-600 flex items-center gap-1">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                </svg>
-                Completed
-              </span>
-            <% end %>
-          </div>
-        </div>
-        <div class="flex gap-2">
-          <button
-            phx-click="edit_todo_from_view"
-            phx-value-id={@todo.id}
-            class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            title="Edit Todo"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-            </svg>
-          </button>
-          <button
-            phx-click="toggle_todo_chat"
-            phx-value-id={@todo.id}
-            class="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-            title="Chat about this todo"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
-      
-      <!-- Tags -->
-      <%= if @todo.tags && length(@todo.tags) > 0 do %>
-        <div class="flex flex-wrap gap-2">
-          <%= for tag <- @todo.tags do %>
-            <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-              #<%= tag %>
-            </span>
-          <% end %>
-        </div>
-      <% end %>
-      
-      <!-- Description -->
-      <%= if @todo.description && String.trim(@todo.description) != "" do %>
-        <div class="bg-gray-50 rounded-lg p-4">
-          <h3 class="text-lg font-semibold text-gray-800 mb-3">Description</h3>
-          <div class="prose prose-sm prose-gray max-w-none">
-            <%= raw(Earmark.as_html!(@todo.description)) %>
-          </div>
-        </div>
-      <% end %>
-      
-      <!-- Comments Section -->
-      <div class="border-t pt-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-800">Comments</h3>
-          <button
-            onclick={"document.getElementById('comment-form-#{@todo.id}').classList.remove('hidden')"}
-            class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-          >
-            Add Comment
-          </button>
-        </div>
-        
-        <!-- Add Comment Form -->
-        <div id={"comment-form-#{@todo.id}"} class="mb-4 hidden">
-          <form phx-submit="add_todo_comment" phx-value-todo-id={@todo.id}>
-            <textarea
-              name="comment[content]"
-              placeholder="Add a comment..."
-              class="w-full p-3 border border-gray-300 rounded-lg resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            ></textarea>
-            <div class="flex justify-end gap-2 mt-2">
-              <button
-                type="button"
-                phx-click="hide_add_comment_form"
-                class="px-3 py-1 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Add Comment
-              </button>
-            </div>
-          </form>
-        </div>
-        
-        <!-- Comments List -->
-        <div class="space-y-3">
-          <%= if length(@comments) == 0 do %>
-            <p class="text-gray-500 text-center py-8">No comments yet. Be the first to add one!</p>
-          <% else %>
-            <%= for comment <- @comments do %>
-              <.comment_item comment={comment} />
-            <% end %>
-          <% end %>
-        </div>
-      </div>
-      
-      <!-- Chat Interface (always rendered but hidden with CSS) -->
-      <div id={"todo-chat-#{@todo.id}"} class="border-t pt-6 hidden">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">Chat about this Todo</h3>
-          <div class="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto mb-3">
-            <div class="space-y-3">
-              <%= for message <- Map.get(assigns, :todo_chat_messages, []) do %>
-                <div class={"flex #{if message.role == "user", do: "justify-end", else: "justify-start"}"}>
-                  <div class={"max-w-xs px-3 py-2 rounded-lg #{if message.role == "user", do: "bg-blue-600 text-white", else: "bg-white text-gray-800"}"}>
-                    <%= message.content %>
-                  </div>
-                </div>
+              <%= if @todo.due_date do %>
+                <span class="text-gray-600 flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                  <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
+                </span>
+              <% end %>
+              <%= if @todo.completed do %>
+                <span class="text-green-600 flex items-center gap-1">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  </svg>
+                  Completed
+                </span>
               <% end %>
             </div>
           </div>
-          <form phx-submit="send_todo_chat_message" phx-value-todo-id={@todo.id} class="flex gap-2">
-            <input
-              type="text"
-              name="message"
-              placeholder="Ask about this todo..."
-              class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
+          <div class="flex gap-2">
             <button
-              type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              phx-click="edit_todo_from_view"
+              phx-value-id={@todo.id}
+              class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Edit Todo"
             >
-              Send
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+              </svg>
             </button>
-          </form>
+            <button
+              type="button"
+              phx-click="toggle_todo_chat"
+              phx-value-id={@todo.id}
+              class={"p-2 hover:bg-purple-50 rounded-lg transition-colors #{if @show_chat, do: "text-purple-700 bg-purple-100", else: "text-purple-600"}"}
+              title={if @show_chat, do: "Close chat", else: "Chat about this todo"}
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Tags -->
+        <%= if @todo.tags && length(@todo.tags) > 0 do %>
+          <div class="flex flex-wrap gap-2 mb-6">
+            <%= for tag <- @todo.tags do %>
+              <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                #<%= tag %>
+              </span>
+            <% end %>
+          </div>
+        <% end %>
+        
+        <!-- Description -->
+        <%= if @todo.description && String.trim(@todo.description) != "" do %>
+          <div class="bg-gray-50 rounded-lg p-4 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-3">Description</h3>
+            <div class="prose prose-sm prose-gray max-w-none">
+              <%= raw(Earmark.as_html!(@todo.description)) %>
+            </div>
+          </div>
+        <% end %>
+        
+        <!-- Comments Section -->
+        <div class="border-t pt-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-800">Comments</h3>
+            <button
+              onclick={"document.getElementById('comment-form-#{@todo.id}').classList.remove('hidden')"}
+              class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              Add Comment
+            </button>
+          </div>
+          
+          <!-- Add Comment Form -->
+          <div id={"comment-form-#{@todo.id}"} class="mb-4 hidden">
+            <form phx-submit="add_todo_comment" phx-value-todo-id={@todo.id}>
+              <textarea
+                name="comment[content]"
+                placeholder="Add a comment..."
+                class="w-full p-3 border border-gray-300 rounded-lg resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              ></textarea>
+              <div class="flex justify-end gap-2 mt-2">
+                <button
+                  type="button"
+                  phx-click="hide_add_comment_form"
+                  class="px-3 py-1 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Add Comment
+                </button>
+              </div>
+            </form>
+          </div>
+          
+          <!-- Comments List -->
+          <div class="space-y-3">
+            <%= if length(@comments) == 0 do %>
+              <p class="text-gray-500 text-center py-8">No comments yet. Be the first to add one!</p>
+            <% else %>
+              <%= for comment <- @comments do %>
+                <.comment_item comment={comment} />
+              <% end %>
+            <% end %>
+          </div>
+        </div>
       </div>
+      
+      <!-- Right Column: Chat Interface -->
+      <%= if @show_chat do %>
+        <div class="w-1/2 border-l pl-6">
+          <div class="flex flex-col h-full">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-gray-800">Todo Chat</h3>
+              <div class="flex items-center gap-2">
+                <%= if length(Map.get(assigns, :todo_conversations, [])) > 1 do %>
+                  <button
+                    phx-click="create_new_todo_conversation"
+                    phx-value-todo-id={@todo.id}
+                    class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                    title="Start new conversation"
+                  >
+                    + New
+                  </button>
+                <% end %>
+                <p class="text-sm text-gray-500">Ask questions about this todo</p>
+              </div>
+            </div>
+            
+            <!-- Conversation Selector -->
+            <%= if length(Map.get(assigns, :todo_conversations, [])) > 1 do %>
+              <div class="mb-3">
+                <select 
+                  phx-change="switch_todo_conversation"
+                  phx-value-todo-id={@todo.id}
+                  class="w-full p-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <%= for conversation <- Map.get(assigns, :todo_conversations, []) do %>
+                    <option 
+                      value={conversation.id}
+                      selected={Map.get(assigns, :current_todo_conversation) && Map.get(assigns, :current_todo_conversation).id == conversation.id}
+                    >
+                      <%= conversation.title %> (<%= length(conversation.chat_messages) %> messages)
+                    </option>
+                  <% end %>
+                </select>
+              </div>
+            <% end %>
+            
+            <div class="flex-1 bg-gray-50 rounded-lg p-4 overflow-y-auto mb-4">
+              <div class="space-y-3">
+                <%= if length(Map.get(assigns, :todo_chat_messages, [])) == 0 do %>
+                  <p class="text-gray-500 text-center py-8 text-sm">
+                    Start a conversation about "<%= @todo.title %>"
+                  </p>
+                <% else %>
+                  <%= for message <- Map.get(assigns, :todo_chat_messages, []) do %>
+                    <div class={"flex #{if message.role == "user", do: "justify-end", else: "justify-start"}"}>
+                      <div class={"max-w-xs px-3 py-2 rounded-lg text-sm #{if message.role == "user", do: "bg-blue-600 text-white", else: (if Map.get(message, :loading, false), do: "bg-gray-100 text-gray-600 animate-pulse", else: "bg-white text-gray-800 border")}"}>
+                        <%= if message.role == "assistant" && !Map.get(message, :loading, false) do %>
+                          <div class="prose prose-sm prose-gray max-w-none">
+                            <%= raw(Earmark.as_html!(message.content)) %>
+                          </div>
+                        <% else %>
+                          <%= if Map.get(message, :loading, false) do %>
+                            <div class="flex items-center gap-1">
+                              <div class="flex space-x-1">
+                                <div class="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0s;"></div>
+                                <div class="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s;"></div>
+                                <div class="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s;"></div>
+                              </div>
+                              <span class="text-xs">Thinking...</span>
+                            </div>
+                          <% else %>
+                            <%= message.content %>
+                          <% end %>
+                        <% end %>
+                      </div>
+                    </div>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
+            
+            <form phx-submit="send_todo_chat_message" phx-value-todo-id={@todo.id} class="flex gap-2">
+              <input
+                type="text"
+                name="message"
+                placeholder="Ask about this todo..."
+                class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                required
+              />
+              <button
+                type="submit"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+              >
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end

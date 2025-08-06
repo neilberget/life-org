@@ -20,7 +20,7 @@ defmodule LifeOrgWeb.Components.JournalComponent do
           </button>
         </div>
         
-        <.journal_form />
+        <.journal_form processing_journal_todos={assigns[:processing_journal_todos] || false} />
         <.journal_entries entries={@entries} />
         
         <!-- Edit Journal Entry Modal -->
@@ -36,6 +36,7 @@ defmodule LifeOrgWeb.Components.JournalComponent do
 
   def journal_form(assigns) do
     assigns = assign(assigns, :today, Date.utc_today() |> Date.to_string())
+    assigns = assign_new(assigns, :processing_journal_todos, fn -> false end)
     
     ~H"""
     <form id="journal-form" phx-submit="create_journal_entry" class="mb-6">
@@ -64,9 +65,26 @@ defmodule LifeOrgWeb.Components.JournalComponent do
             class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          Add Entry
-        </button>
+        <div class="relative">
+          <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors" disabled={@processing_journal_todos}>
+            <%= if @processing_journal_todos do %>
+              <span class="flex items-center justify-center">
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Processing...
+              </span>
+            <% else %>
+              Add Entry
+            <% end %>
+          </button>
+          <%= if @processing_journal_todos do %>
+            <div class="mt-2 text-sm text-blue-600 text-center">
+              Extracting todos from your journal entry...
+            </div>
+          <% end %>
+        </div>
       </div>
     </form>
     """
