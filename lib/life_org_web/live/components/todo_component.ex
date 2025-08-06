@@ -1,6 +1,7 @@
 defmodule LifeOrgWeb.Components.TodoComponent do
   use Phoenix.Component
   import LifeOrgWeb.Components.ModalComponent
+  import Phoenix.HTML
 
   def todo_column(assigns) do
     unique_tags = get_unique_tags(assigns.all_todos || assigns.todos)
@@ -86,19 +87,36 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               </div>
             <% end %>
           </div>
+          
+          <button
+            phx-click="expand_todos"
+            class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Expand todos view"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+            </svg>
+          </button>
         </div>
         
         <!-- Incoming Todos Section -->
-        <%= if assigns[:incoming_todos] && length(@incoming_todos) > 0 do %>
+        <%= if Map.get(assigns, :incoming_todos, []) != [] && length(@incoming_todos) > 0 do %>
           <.incoming_todos_section todos={@incoming_todos} />
         <% end %>
         
         <.todo_list todos={@todos} />
         
         <!-- Edit Todo Modal -->
-        <%= if assigns[:editing_todo] do %>
-          <.modal id="edit-todo-modal" title="Edit Todo">
+        <%= if Map.get(assigns, :editing_todo) do %>
+          <.modal id="edit-todo-modal" title="Edit Todo" z_index="high">
             <.edit_todo_form todo={@editing_todo} />
+          </.modal>
+        <% end %>
+        
+        <!-- View Todo Modal -->
+        <%= if Map.get(assigns, :viewing_todo) do %>
+          <.modal id="view-todo-modal" title="Todo Details" size="large">
+            <.todo_view todo={@viewing_todo} comments={Map.get(assigns, :todo_comments, [])} />
           </.modal>
         <% end %>
       </div>
@@ -174,6 +192,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               <%= @todo.priority %>
             </span>
           <% end %>
+          <%= if @todo.comment_count && @todo.comment_count > 0 do %>
+            <span class="text-xs text-gray-500 flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+              </svg>
+              <%= @todo.comment_count %>
+            </span>
+          <% end %>
           <%= if @todo.tags && length(@todo.tags) > 0 do %>
             <div class="flex flex-wrap gap-1">
               <%= for tag <- @todo.tags do %>
@@ -207,11 +233,11 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         checked={@todo.completed}
         phx-click="toggle_todo"
         phx-value-id={@todo.id}
-        class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 z-10 relative"
+        class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
       />
       <div 
         class="flex-1 cursor-pointer"
-        phx-click="edit_todo"
+        phx-click="view_todo"
         phx-value-id={@todo.id}
       >
         <div class="flex justify-between items-start">
@@ -222,8 +248,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             <button
               phx-click="edit_todo"
               phx-value-id={@todo.id}
-              class="text-blue-500 hover:text-blue-700 z-10 relative"
-              onclick="event.stopPropagation()"
+              class="text-blue-500 hover:text-blue-700"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
@@ -233,7 +258,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               phx-click="delete_todo"
               phx-value-id={@todo.id}
               data-confirm="Delete this todo?"
-              class="text-red-500 hover:text-red-700 z-10 relative"
+              class="text-red-500 hover:text-red-700"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -253,6 +278,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <%= if @todo.due_date do %>
             <span class="text-xs text-gray-500">
               📅 <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
+            </span>
+          <% end %>
+          <%= if @todo.comment_count && @todo.comment_count > 0 do %>
+            <span class="text-xs text-gray-500 flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+              </svg>
+              <%= @todo.comment_count %>
             </span>
           <% end %>
           <%= if @todo.tags && length(@todo.tags) > 0 do %>
@@ -391,7 +424,198 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     "#{date_str} at #{time_str}"
   end
   
-  defp get_unique_tags(todos) do
+  def todo_view(assigns) do
+    ~H"""
+    <div class="space-y-6">
+      <!-- Todo Header -->
+      <div class="flex items-start justify-between">
+        <div class="flex-1">
+          <h2 class={"text-2xl font-bold #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
+            <%= @todo.title %>
+          </h2>
+          <div class="flex items-center gap-3 mt-2">
+            <span class={"px-3 py-1 rounded-full text-sm font-medium #{priority_class(@todo.priority)}"}>
+              <%= String.capitalize(@todo.priority || "medium") %>
+            </span>
+            <%= if @todo.due_date do %>
+              <span class="text-gray-600 flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
+              </span>
+            <% end %>
+            <%= if @todo.completed do %>
+              <span class="text-green-600 flex items-center gap-1">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+                Completed
+              </span>
+            <% end %>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button
+            phx-click="edit_todo_from_view"
+            phx-value-id={@todo.id}
+            class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            title="Edit Todo"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+            </svg>
+          </button>
+          <button
+            phx-click="toggle_todo_chat"
+            phx-value-id={@todo.id}
+            class="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+            title="Chat about this todo"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Tags -->
+      <%= if @todo.tags && length(@todo.tags) > 0 do %>
+        <div class="flex flex-wrap gap-2">
+          <%= for tag <- @todo.tags do %>
+            <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+              #<%= tag %>
+            </span>
+          <% end %>
+        </div>
+      <% end %>
+      
+      <!-- Description -->
+      <%= if @todo.description && String.trim(@todo.description) != "" do %>
+        <div class="bg-gray-50 rounded-lg p-4">
+          <h3 class="text-lg font-semibold text-gray-800 mb-3">Description</h3>
+          <div class="prose prose-sm prose-gray max-w-none">
+            <%= raw(Earmark.as_html!(@todo.description)) %>
+          </div>
+        </div>
+      <% end %>
+      
+      <!-- Comments Section -->
+      <div class="border-t pt-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-800">Comments</h3>
+          <button
+            onclick={"document.getElementById('comment-form-#{@todo.id}').classList.remove('hidden')"}
+            class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+          >
+            Add Comment
+          </button>
+        </div>
+        
+        <!-- Add Comment Form -->
+        <div id={"comment-form-#{@todo.id}"} class="mb-4 hidden">
+          <form phx-submit="add_todo_comment" phx-value-todo-id={@todo.id}>
+            <textarea
+              name="comment[content]"
+              placeholder="Add a comment..."
+              class="w-full p-3 border border-gray-300 rounded-lg resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            ></textarea>
+            <div class="flex justify-end gap-2 mt-2">
+              <button
+                type="button"
+                phx-click="hide_add_comment_form"
+                class="px-3 py-1 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Add Comment
+              </button>
+            </div>
+          </form>
+        </div>
+        
+        <!-- Comments List -->
+        <div class="space-y-3">
+          <%= if length(@comments) == 0 do %>
+            <p class="text-gray-500 text-center py-8">No comments yet. Be the first to add one!</p>
+          <% else %>
+            <%= for comment <- @comments do %>
+              <.comment_item comment={comment} />
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+      
+      <!-- Chat Interface (always rendered but hidden with CSS) -->
+      <div id={"todo-chat-#{@todo.id}"} class="border-t pt-6 hidden">
+          <h3 class="text-lg font-semibold text-gray-800 mb-4">Chat about this Todo</h3>
+          <div class="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto mb-3">
+            <div class="space-y-3">
+              <%= for message <- Map.get(assigns, :todo_chat_messages, []) do %>
+                <div class={"flex #{if message.role == "user", do: "justify-end", else: "justify-start"}"}>
+                  <div class={"max-w-xs px-3 py-2 rounded-lg #{if message.role == "user", do: "bg-blue-600 text-white", else: "bg-white text-gray-800"}"}>
+                    <%= message.content %>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+          <form phx-submit="send_todo_chat_message" phx-value-todo-id={@todo.id} class="flex gap-2">
+            <input
+              type="text"
+              name="message"
+              placeholder="Ask about this todo..."
+              class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <button
+              type="submit"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Send
+            </button>
+          </form>
+      </div>
+    </div>
+    """
+  end
+  
+  def comment_item(assigns) do
+    ~H"""
+    <div class="flex gap-3 p-3 bg-white border border-gray-200 rounded-lg">
+      <div class="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+        <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="flex-1">
+        <div class="prose prose-sm prose-gray max-w-none">
+          <%= raw(Earmark.as_html!(@comment.content)) %>
+        </div>
+        <div class="flex items-center justify-between mt-2">
+          <span class="text-xs text-gray-500">
+            <%= Calendar.strftime(@comment.inserted_at, "%B %d, %Y at %I:%M %p") %>
+          </span>
+          <button
+            phx-click="delete_todo_comment"
+            phx-value-id={@comment.id}
+            data-confirm="Delete this comment?"
+            class="text-red-500 hover:text-red-700 text-xs"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  def get_unique_tags(todos) do
     todos
     |> Enum.flat_map(fn todo -> todo.tags || [] end)
     |> Enum.uniq()

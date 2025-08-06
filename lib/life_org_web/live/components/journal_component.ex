@@ -7,7 +7,18 @@ defmodule LifeOrgWeb.Components.JournalComponent do
     ~H"""
     <div class="w-1/2 bg-white border-r border-gray-200 overflow-y-auto" phx-hook="ClearJournalForm" id="journal-column">
       <div class="p-6">
-        <h2 class="text-2xl font-bold text-gray-800 mb-6">Journal Entries</h2>
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-2xl font-bold text-gray-800">Journal Entries</h2>
+          <button
+            phx-click="expand_journal"
+            class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Expand journal view"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+            </svg>
+          </button>
+        </div>
         
         <.journal_form />
         <.journal_entries entries={@entries} />

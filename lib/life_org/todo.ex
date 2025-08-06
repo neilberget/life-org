@@ -2,6 +2,7 @@ defmodule LifeOrg.Todo do
   use Ecto.Schema
   import Ecto.Changeset
   alias LifeOrg.Workspace
+  alias LifeOrg.TodoComment
 
   schema "todos" do
     field :priority, :string
@@ -12,8 +13,10 @@ defmodule LifeOrg.Todo do
     field :due_time, :time
     field :ai_generated, :boolean, default: false
     field :tags, {:array, :string}, default: []
+    field :comment_count, :integer, virtual: true, default: 0
 
     belongs_to :workspace, Workspace
+    has_many :comments, TodoComment, foreign_key: :todo_id
 
     timestamps(type: :utc_datetime)
   end

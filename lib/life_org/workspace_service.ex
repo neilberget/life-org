@@ -92,6 +92,9 @@ defmodule LifeOrg.WorkspaceService do
   def list_todos(workspace_id) do
     Todo
     |> where([t], t.workspace_id == ^workspace_id)
+    |> join(:left, [t], c in assoc(t, :comments))
+    |> group_by([t], t.id)
+    |> select([t, c], %{t | comment_count: count(c.id)})
     |> order_by([t], [desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
     |> Repo.all()
   end

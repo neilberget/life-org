@@ -6,16 +6,25 @@ defmodule LifeOrg.AIHandler do
     system_prompt = build_system_prompt(journal_entries, todos)
     IO.puts("System prompt built: #{String.length(system_prompt)} characters")
     
+    # Define available tools
+    tools = build_tools_definition(todos)
+    
     # Combine conversation history with new message
     messages = conversation_history ++ [%{role: "user", content: message}]
     IO.puts("Total messages in conversation: #{length(messages)}")
     
-    IO.puts("Sending message to Anthropic API...")
-    case AnthropicClient.send_message(messages, system_prompt) do
+    IO.puts("Sending message to Anthropic API with tools...")
+    case AnthropicClient.send_message(messages, system_prompt, tools) do
       {:ok, response} ->
         IO.puts("Got response from API: #{inspect(response)}")
-        assistant_message = extract_assistant_message(response)
-        tool_actions = parse_tool_actions(assistant_message)
+        content_blocks = AnthropicClient.extract_content_from_response(response)
+        
+        # Extract text message and tool uses separately
+        assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+        tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
+        
+        # Convert tool uses to our action format
+        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, todos))
         
         {:ok, assistant_message, tool_actions}
         
@@ -63,11 +72,6 @@ defmodule LifeOrg.AIHandler do
     2. Identify any updates needed to existing todos (priority changes, additional details, completion status, tags)
     3. Avoid creating duplicates - if a similar task already exists, update it instead
     
-    Use these formats:
-    - For NEW todos: [CREATE_TODO: title="Task title" description="Optional description" priority="high|medium|low" tags="tag1, tag2, tag3"]
-    - For UPDATING existing todos: [UPDATE_TODO: id=123 title="Updated title" description="Updated description" priority="high|medium|low" tags="tag1, tag2, tag3"]
-    - For COMPLETING todos: [COMPLETE_TODO: id=123]
-    
     Guidelines for priority:
     - High: Urgent tasks, deadlines, important meetings
     - Medium: Regular tasks, planning items, follow-ups  
@@ -86,12 +90,18 @@ defmodule LifeOrg.AIHandler do
     - Only create new todos for genuinely new actionable items
     """
     
+    # Define tools for journal todo extraction
+    tools = build_tools_definition(existing_todos)
+    
     messages = [%{role: "user", content: journal_content}]
     
-    case AnthropicClient.send_message(messages, system_prompt) do
+    case AnthropicClient.send_message(messages, system_prompt, tools) do
       {:ok, response} ->
-        assistant_message = extract_assistant_message(response)
-        tool_actions = parse_tool_actions(assistant_message)
+        content_blocks = AnthropicClient.extract_content_from_response(response)
+        tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
+        
+        # Convert tool uses to our action format
+        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, existing_todos))
         {:ok, tool_actions}
         
       {:error, error} ->
@@ -130,7 +140,7 @@ defmodule LifeOrg.AIHandler do
             [] -> ""
             tags -> " [Tags: " <> Enum.join(tags, ", ") <> "]"
           end
-          "#{status} [#{priority}] #{todo.title}#{due_info}#{tags_info}" <> 
+          "ID: #{todo.id} | #{status} [#{priority}] #{todo.title}#{due_info}#{tags_info}" <> 
             if todo.description && String.trim(todo.description) != "", do: " - #{todo.description}", else: ""
         end)
     end
@@ -146,11 +156,7 @@ defmodule LifeOrg.AIHandler do
     
     #{tags_context}
     
-    You can create todos by using the following format in your response:
-    [CREATE_TODO: title="Task title" description="Optional description" priority="high|medium|low" tags="tag1, tag2, tag3"]
-    
-    You can mark todos as complete by using:
-    [COMPLETE_TODO: id=123]
+    You have access to tools for managing todos. Use them when the user asks you to create, update, or complete tasks.
     
     When creating todos, please suggest appropriate tags based on:
     - Existing tags that are relevant to the new task
@@ -163,83 +169,127 @@ defmodule LifeOrg.AIHandler do
     """
   end
   
-  defp extract_assistant_message(response) do
-    case response["content"] do
-      [%{"text" => text} | _] -> text
-      _ -> "I couldn't process that response."
+  defp build_tools_definition(todos) do
+    # Get existing tags for the enum values
+    existing_tags = get_unique_tags(todos)
+    
+    # Build todo IDs list for update/complete tools
+    todo_ids = Enum.map(todos, & &1.id)
+    
+    [
+      %{
+        "name" => "create_todo",
+        "description" => "Create a new todo item",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "title" => %{
+              "type" => "string",
+              "description" => "The title of the todo"
+            },
+            "description" => %{
+              "type" => "string",
+              "description" => "Optional description with more details"
+            },
+            "priority" => %{
+              "type" => "string",
+              "enum" => ["high", "medium", "low"],
+              "description" => "Priority level of the todo"
+            },
+            "tags" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "Tags to categorize the todo. Existing tags: #{Enum.join(existing_tags, ", ")}"
+            }
+          },
+          "required" => ["title"]
+        }
+      },
+      %{
+        "name" => "update_todo",
+        "description" => "Update an existing todo item",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "id" => %{
+              "type" => "integer",
+              "description" => "The ID of the todo to update. Available IDs: #{Enum.join(todo_ids, ", ")}"
+            },
+            "title" => %{
+              "type" => "string",
+              "description" => "New title for the todo"
+            },
+            "description" => %{
+              "type" => "string",
+              "description" => "New description for the todo"
+            },
+            "priority" => %{
+              "type" => "string",
+              "enum" => ["high", "medium", "low"],
+              "description" => "New priority level"
+            },
+            "tags" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "New tags for the todo"
+            }
+          },
+          "required" => ["id"]
+        }
+      },
+      %{
+        "name" => "complete_todo",
+        "description" => "Mark a todo as completed",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "id" => %{
+              "type" => "integer",
+              "description" => "The ID of the todo to complete. Available IDs: #{Enum.join(todo_ids, ", ")}"
+            }
+          },
+          "required" => ["id"]
+        }
+      }
+    ]
+  end
+  
+  defp convert_tool_use_to_action(tool_use, _todos) do
+    case tool_use.name do
+      "create_todo" ->
+        %{
+          action: :create_todo,
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          priority: tool_use.input["priority"] || "medium",
+          tags: tool_use.input["tags"] || []
+        }
+        
+      "update_todo" ->
+        updates = %{}
+        |> maybe_add("title", tool_use.input["title"])
+        |> maybe_add("description", tool_use.input["description"])
+        |> maybe_add("priority", tool_use.input["priority"])
+        |> maybe_add("tags", tool_use.input["tags"])
+        
+        %{
+          action: :update_todo,
+          id: tool_use.input["id"],
+          updates: updates
+        }
+        
+      "complete_todo" ->
+        %{
+          action: :complete_todo,
+          id: tool_use.input["id"]
+        }
     end
-  end
-  
-  defp parse_tool_actions(text) do
-    create_todos = parse_create_todos(text)
-    update_todos = parse_update_todos(text)
-    complete_todos = parse_complete_todos(text)
-    
-    create_todos ++ update_todos ++ complete_todos
-  end
-  
-  defp parse_create_todos(text) do
-    regex = ~r/\[CREATE_TODO: title="([^"]+)"(?:\s+description="([^"]+)")?(?:\s+priority="(high|medium|low)")?(?:\s+tags="([^"]+)")?\]/
-    
-    Regex.scan(regex, text)
-    |> Enum.map(fn [_, title, description, priority, tags] ->
-      parsed_tags = parse_tags_string(tags)
-      %{
-        action: :create_todo,
-        title: title,
-        description: description || "",
-        priority: priority || "medium",
-        tags: parsed_tags
-      }
-    end)
-  end
-  
-  defp parse_complete_todos(text) do
-    regex = ~r/\[COMPLETE_TODO: id=(\d+)\]/
-    
-    Regex.scan(regex, text)
-    |> Enum.map(fn [_, id] ->
-      %{
-        action: :complete_todo,
-        id: String.to_integer(id)
-      }
-    end)
-  end
-  
-  defp parse_update_todos(text) do
-    regex = ~r/\[UPDATE_TODO: id=(\d+)(?:\s+title="([^"]+)")?(?:\s+description="([^"]+)")?(?:\s+priority="(high|medium|low)")?(?:\s+tags="([^"]+)")?\]/
-    
-    Regex.scan(regex, text)
-    |> Enum.map(fn [_, id, title, description, priority, tags] ->
-      updates = %{}
-      |> maybe_add("title", title)
-      |> maybe_add("description", description)
-      |> maybe_add("priority", priority)
-      |> maybe_add_tags("tags", tags)
-      
-      %{
-        action: :update_todo,
-        id: String.to_integer(id),
-        updates: updates
-      }
-    end)
   end
   
   defp maybe_add(map, _key, value) when value == "" or is_nil(value), do: map
   defp maybe_add(map, key, value), do: Map.put(map, key, value)
   
-  defp maybe_add_tags(map, _key, value) when value == "" or is_nil(value), do: map
-  defp maybe_add_tags(map, key, value), do: Map.put(map, key, parse_tags_string(value))
-  
-  defp parse_tags_string(nil), do: []
-  defp parse_tags_string(""), do: []
-  defp parse_tags_string(tags_string) do
-    tags_string
-    |> String.split(",")
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.uniq()
-  end
+  defp maybe_add(map, key, value) when is_list(value) and value != [], do: Map.put(map, key, value)
   
   defp get_unique_tags(todos) do
     todos

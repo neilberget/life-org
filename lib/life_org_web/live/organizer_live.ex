@@ -1,6 +1,7 @@
 defmodule LifeOrgWeb.OrganizerLive do
   use LifeOrgWeb, :live_view
-  alias LifeOrg.{Repo, JournalEntry, Todo, AIHandler, ConversationService, WorkspaceService}
+  import Ecto.Query
+  alias LifeOrg.{Repo, JournalEntry, Todo, TodoComment, AIHandler, ConversationService, WorkspaceService}
   alias LifeOrgWeb.Components.{JournalComponent, ChatComponent, TodoComponent}
 
   @impl true
@@ -31,7 +32,15 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:show_workspace_form, false)
      |> assign(:show_ai_sidebar, false)
      |> assign(:ai_sidebar_view, :conversations)
-     |> assign(:tag_filter, nil)}
+     |> assign(:tag_filter, nil)
+     |> assign(:viewing_todo, nil)
+     |> assign(:todo_comments, [])
+     |> assign(:show_comment_form, false)
+     |> assign(:comment_todo_id, nil)
+     |> assign(:show_todo_chat, false)
+     |> assign(:chat_todo_id, nil)
+     |> assign(:todo_chat_messages, [])
+     |> assign(:layout_expanded, nil)}
   end
 
   @impl true
@@ -162,12 +171,30 @@ defmodule LifeOrgWeb.OrganizerLive do
                 end)
                 |> sort_todos()
         
-        {:noreply,
-         socket
+        # If we were viewing this todo before editing, return to view modal
+        should_return_to_view = socket.assigns[:viewing_todo] != nil || 
+                               (socket.assigns[:viewing_todo] == nil && socket.assigns[:editing_todo] && socket.assigns.editing_todo.id == updated_todo.id)
+
+        socket = socket
          |> assign(:todos, todos)
          |> assign(:editing_todo, nil)
          |> push_event("hide_modal", %{id: "edit-todo-modal"})
-         |> put_flash(:info, "Todo updated successfully")}
+         |> put_flash(:info, "Todo updated successfully")
+
+        socket = if should_return_to_view do
+          # Reload comments for the updated todo
+          comments = Repo.all(from c in TodoComment, where: c.todo_id == ^updated_todo.id, order_by: [desc: c.inserted_at])
+          |> Repo.preload([])
+
+          socket
+          |> assign(:viewing_todo, updated_todo)
+          |> assign(:todo_comments, comments)
+          |> push_event("show_modal", %{id: "view-todo-modal"})
+        else
+          socket
+        end
+
+        {:noreply, socket}
 
       {:error, %Ecto.Changeset{} = _changeset} ->
         {:noreply, put_flash(socket, :error, "Error updating todo")}
@@ -458,6 +485,163 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_event("edit_todo_from_view", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, String.to_integer(id))
+    
+    {:noreply,
+     socket
+     |> assign(:viewing_todo, nil)
+     |> assign(:editing_todo, todo)
+     |> push_event("hide_modal", %{id: "view-todo-modal"})
+     |> push_event("show_modal", %{id: "edit-todo-modal"})}
+  end
+
+  @impl true
+  def handle_event("view_todo", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, String.to_integer(id))
+    comments = Repo.all(from c in TodoComment, where: c.todo_id == ^todo.id, order_by: [desc: c.inserted_at])
+    |> Repo.preload([])
+    
+    {:noreply,
+     socket
+     |> assign(:viewing_todo, todo)
+     |> assign(:todo_comments, comments)
+     |> push_event("show_modal", %{id: "view-todo-modal"})}
+  end
+
+  @impl true
+  def handle_event("show_add_comment_form", %{"todo-id" => todo_id}, socket) do
+    viewing_todo_id = if socket.assigns[:viewing_todo], do: socket.assigns.viewing_todo.id, else: nil
+    IO.inspect({:show_comment_form, todo_id, viewing_todo_id}, label: "DEBUG")
+    
+    {:noreply,
+     socket
+     |> assign(:show_comment_form, true)
+     |> assign(:comment_todo_id, String.to_integer(todo_id))
+     |> push_event("show_comment_form", %{todo_id: todo_id})}
+  end
+
+  @impl true
+  def handle_event("hide_add_comment_form", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_comment_form, false)
+     |> assign(:comment_todo_id, nil)
+     |> push_event("hide_comment_form", %{})}
+  end
+
+  @impl true
+  def handle_event("add_todo_comment", %{"todo-id" => todo_id, "comment" => comment_params}, socket) do
+    case Repo.insert(TodoComment.changeset(%TodoComment{}, Map.put(comment_params, "todo_id", String.to_integer(todo_id)))) do
+      {:ok, _comment} ->
+        # Reload comments for the current viewing todo
+        comments = Repo.all(from c in TodoComment, where: c.todo_id == ^String.to_integer(todo_id), order_by: [desc: c.inserted_at])
+        |> Repo.preload([])
+
+        # Refresh todos list to update comment count
+        todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+
+        # Make sure the modal stays open by keeping the viewing_todo assigned and explicitly showing it
+        {:noreply,
+         socket
+         |> assign(:todos, todos)
+         |> assign(:todo_comments, comments)
+         |> assign(:show_comment_form, false)
+         |> assign(:comment_todo_id, nil)
+         |> push_event("hide_comment_form", %{})
+         |> push_event("clear_comment_form", %{todo_id: todo_id})
+         |> push_event("show_modal", %{id: "view-todo-modal"})}
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Error adding comment")}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_todo_comment", %{"id" => id}, socket) do
+    comment = Repo.get!(TodoComment, String.to_integer(id))
+    Repo.delete!(comment)
+    
+    # Refresh todos list to update comment count
+    todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+    
+    # Reload comments if we're currently viewing this todo
+    if socket.assigns[:viewing_todo] do
+      comments = Repo.all(from c in TodoComment, where: c.todo_id == ^socket.assigns.viewing_todo.id, order_by: [desc: c.inserted_at])
+      |> Repo.preload([])
+
+      {:noreply, 
+       socket
+       |> assign(:todos, todos)
+       |> assign(:todo_comments, comments)
+       |> push_event("show_modal", %{id: "view-todo-modal"})}
+    else
+      {:noreply, assign(socket, :todos, todos)}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_todo_chat", %{"id" => todo_id}, socket) do
+    current_chat_todo = socket.assigns[:chat_todo_id]
+    todo_id_int = String.to_integer(todo_id)
+    
+    IO.inspect({:toggle_chat, current_chat_todo, todo_id_int, socket.assigns[:show_todo_chat]}, label: "CHAT_DEBUG")
+    
+    if current_chat_todo == todo_id_int do
+      # Close chat if it's already open for this todo
+      {:noreply,
+       socket
+       |> assign(:show_todo_chat, false)
+       |> assign(:chat_todo_id, nil)
+       |> assign(:todo_chat_messages, [])
+       |> push_event("hide_todo_chat", %{todo_id: todo_id})
+       |> push_event("show_modal", %{id: "view-todo-modal"})}
+    else
+      # Open chat for this todo
+      {:noreply,
+       socket
+       |> assign(:show_todo_chat, true)
+       |> assign(:chat_todo_id, todo_id_int)
+       |> assign(:todo_chat_messages, [])
+       |> push_event("show_todo_chat", %{todo_id: todo_id})
+       |> push_event("show_modal", %{id: "view-todo-modal"})}
+    end
+  end
+
+  @impl true
+  def handle_event("expand_todos", _params, socket) do
+    {:noreply, assign(socket, :layout_expanded, :todos)}
+  end
+
+  @impl true
+  def handle_event("expand_journal", _params, socket) do
+    {:noreply, assign(socket, :layout_expanded, :journal)}
+  end
+
+  @impl true
+  def handle_event("return_to_normal_layout", _params, socket) do
+    {:noreply, assign(socket, :layout_expanded, nil)}
+  end
+
+  @impl true
+  def handle_event("send_todo_chat_message", %{"todo-id" => todo_id, "message" => message}, socket) do
+    todo = Repo.get!(Todo, String.to_integer(todo_id))
+    
+    # Add user message to chat
+    current_messages = socket.assigns[:todo_chat_messages] || []
+    messages_with_user = current_messages ++ [%{role: "user", content: message}]
+    
+    # For now, add a simple response - you can integrate with your AI handler later
+    ai_response = "I understand you're asking about the todo '#{todo.title}'. This is a placeholder response - you can integrate this with your AI handler for more sophisticated responses."
+    
+    final_messages = messages_with_user ++ [%{role: "assistant", content: ai_response}]
+    
+    {:noreply,
+     socket
+     |> assign(:todo_chat_messages, final_messages)
+     |> push_event("show_modal", %{id: "view-todo-modal"})}
+  end
+
+  @impl true
   def handle_info({:ai_response, response, tool_actions, conversation_id}, socket) do
     # Save assistant response to database
     {:ok, _assistant_message} = ConversationService.add_message_to_conversation(
@@ -487,6 +671,11 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:chat_messages, display_messages)
      |> assign(:todos, updated_todos)
      |> assign(:processing_message, false)}
+  end
+
+  @impl true
+  def handle_info({:reopen_modal, modal_id}, socket) do
+    {:noreply, push_event(socket, "show_modal", %{id: modal_id})}
   end
 
   @impl true
@@ -547,7 +736,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     end)
     |> sort_todos()
   end
-  
+
   defp sort_todos(todos) do
     Enum.sort_by(todos, fn todo ->
       priority_order = case todo.priority do
@@ -594,6 +783,13 @@ defmodule LifeOrgWeb.OrganizerLive do
     Enum.filter(todos, fn todo ->
       todo.tags && Enum.member?(todo.tags, tag)
     end)
+  end
+  
+  defp get_unique_tags(todos) do
+    todos
+    |> Enum.flat_map(fn todo -> todo.tags || [] end)
+    |> Enum.uniq()
+    |> Enum.sort()
   end
 
 end

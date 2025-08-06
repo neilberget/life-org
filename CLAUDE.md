@@ -173,3 +173,6 @@ mix phx.server
 - Todo recurring tasks
 - Mobile responsiveness improvements
 - Advanced AI tool calling (calendar integration, reminders)
+
+## Development Notes
+- I'm always running mix phx.server in another tab

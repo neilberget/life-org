@@ -3,10 +3,25 @@ defmodule LifeOrgWeb.Components.ModalComponent do
   alias Phoenix.LiveView.JS
 
   def modal(assigns) do
+    size_class = case assigns[:size] do
+      "large" -> "max-w-4xl"
+      "medium" -> "max-w-2xl"
+      _ -> "max-w-md"
+    end
+    
+    z_index_class = case assigns[:z_index] do
+      "high" -> "z-60"
+      _ -> "z-50"
+    end
+    
+    assigns = assigns
+    |> assign(:size_class, size_class)
+    |> assign(:z_index_class, z_index_class)
+    
     ~H"""
     <div
       id={@id}
-      class="fixed inset-0 z-50 overflow-y-auto"
+      class={"fixed inset-0 #{@z_index_class} overflow-y-auto"}
       style="display: none;"
       phx-click-away={hide_modal(@id)}
     >
@@ -15,7 +30,7 @@ defmodule LifeOrgWeb.Components.ModalComponent do
       
       <!-- Modal -->
       <div class="flex min-h-full items-center justify-center p-4">
-        <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div class={"relative bg-white rounded-lg shadow-xl #{@size_class} w-full"}>
           <!-- Header -->
           <div class="flex items-center justify-between p-6 border-b border-gray-200">
             <h3 class="text-lg font-semibold text-gray-900">

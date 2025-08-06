@@ -24,25 +24,9 @@ import topbar from "../vendor/topbar"
 
 let Hooks = {}
 
-Hooks.ClearJournalForm = {
+// Global modal and UI event handlers
+Hooks.GlobalEvents = {
   mounted() {
-    this.handleEvent("clear_journal_form", () => {
-      // Clear the textarea
-      const contentField = document.getElementById("journal-content")
-      if (contentField) contentField.value = ""
-      
-      // Clear the mood field
-      const moodField = document.getElementById("journal-mood")
-      if (moodField) moodField.value = ""
-      
-      // Reset date to today
-      const dateField = document.getElementById("journal-date")
-      if (dateField) {
-        const today = new Date().toISOString().split('T')[0]
-        dateField.value = today
-      }
-    })
-    
     this.handleEvent("show_modal", ({id}) => {
       const modal = document.getElementById(id)
       if (modal) modal.style.display = "block"
@@ -64,6 +48,64 @@ Hooks.ClearJournalForm = {
       const dropdown = document.getElementById(id)
       if (dropdown) {
         dropdown.classList.add("hidden")
+      }
+    })
+    
+    this.handleEvent("show_comment_form", ({todo_id}) => {
+      setTimeout(() => {
+        const form = document.getElementById(`comment-form-${todo_id}`)
+        if (form) {
+          form.classList.remove("hidden")
+        }
+      }, 10)
+    })
+    
+    this.handleEvent("hide_comment_form", () => {
+      const forms = document.querySelectorAll('[id^="comment-form-"]')
+      forms.forEach(form => form.classList.add("hidden"))
+    })
+    
+    this.handleEvent("clear_comment_form", ({todo_id}) => {
+      const form = document.getElementById(`comment-form-${todo_id}`)
+      if (form) {
+        const textarea = form.querySelector('textarea[name="comment[content]"]')
+        if (textarea) textarea.value = ''
+        form.classList.add("hidden")
+      }
+    })
+    
+    this.handleEvent("show_todo_chat", ({todo_id}) => {
+      const chat = document.getElementById(`todo-chat-${todo_id}`)
+      if (chat) {
+        chat.classList.remove("hidden")
+      }
+    })
+    
+    this.handleEvent("hide_todo_chat", ({todo_id}) => {
+      const chat = document.getElementById(`todo-chat-${todo_id}`)
+      if (chat) {
+        chat.classList.add("hidden")
+      }
+    })
+  }
+}
+
+Hooks.ClearJournalForm = {
+  mounted() {
+    this.handleEvent("clear_journal_form", () => {
+      // Clear the textarea
+      const contentField = document.getElementById("journal-content")
+      if (contentField) contentField.value = ""
+      
+      // Clear the mood field
+      const moodField = document.getElementById("journal-mood")
+      if (moodField) moodField.value = ""
+      
+      // Reset date to today
+      const dateField = document.getElementById("journal-date")
+      if (dateField) {
+        const today = new Date().toISOString().split('T')[0]
+        dateField.value = today
       }
     })
   }
