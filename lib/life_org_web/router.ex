@@ -21,6 +21,7 @@ defmodule LifeOrgWeb.Router do
     live "/journal/:id", JournalEntryLive
   end
 
+
   # Other scopes may use custom stacks.
   # scope "/api", LifeOrgWeb do
   #   pipe_through :api

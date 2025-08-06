@@ -53,5 +53,11 @@ defmodule LifeOrgWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  
+  # MCP server endpoint
+  plug Hermes.Server.Transport.StreamableHTTP.Plug,
+    server: LifeOrg.MCPServer,
+    path: "/mcp"
+    
   plug LifeOrgWeb.Router
 end

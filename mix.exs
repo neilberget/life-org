@@ -60,6 +60,8 @@ defmodule LifeOrg.MixProject do
       {:bandit, "~> 1.5"},
       {:earmark, "~> 1.4"},
       {:req, "~> 0.4"},
+      {:hermes_mcp, "~> 0.9"},
+      {:cors_plug, "~> 3.0"},
       {:tidewave, "~> 0.2", only: :dev}
     ]
   end

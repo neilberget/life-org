@@ -20,6 +20,13 @@ config :life_org, LifeOrg.Repo,
 config :life_org, LifeOrgWeb.Endpoint,
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}, port: 4000],
+  https: [
+    ip: {127, 0, 0, 1}, 
+    port: 4001,
+    cipher_suite: :compatible,
+    keyfile: "priv/ssl/key.pem",
+    certfile: "priv/ssl/cert.pem"
+  ],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

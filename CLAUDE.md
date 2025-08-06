@@ -245,14 +245,46 @@ mix phx.server
 - **Modal State Preservation**: Special handling to keep todo view modal open during checkbox updates
 - **Markdown Rendering**: Custom `render_interactive_description/2` function converts markdown checkboxes to interactive HTML inputs
 
+## MCP Server Integration
+
+The application includes a **Model Context Protocol (MCP) server** that enables external AI tools (like Claude Desktop) to interact with the life organizer data.
+
+### Architecture
+- **MCP Server**: `LifeOrg.MCPServer` using hermes_mcp library with component-based architecture
+- **HTTP Transport**: Accessible at `http://localhost:4000/mcp` via Phoenix endpoint integration
+- **Tool Components**:
+  - `TodoTools`: Search and filter todos by query, tags, completion status
+  - `JournalTools`: Search journal entries by content with mood indicators
+
+### Key Implementation Details
+- **Workspace Context**: MCP tools automatically use the default workspace (matches web UI behavior)
+- **Response Format**: Uses `{:reply, Response.json(Response.tool(), result), frame}` pattern from hermes_mcp
+- **Search-Focused**: Optimized for natural language queries rather than full CRUD operations
+- **User-Friendly Output**: Returns formatted text with emojis and visual indicators
+
+### Configuration
+```elixir
+# Application supervision tree
+{LifeOrg.MCPServer, transport: :streamable_http}
+
+# Phoenix endpoint integration
+plug Hermes.Server.Transport.StreamableHTTP.Plug,
+  server: LifeOrg.MCPServer,
+  path: "/mcp"
+```
+
+### Usage
+External AI tools can connect to query data like "Any Mathler tasks I have listed?" or "Show me recent journal entries about work" and receive properly formatted, contextual responses from the user's actual data.
+
 ## Future Enhancement Opportunities
 
-- Search functionality for journal entries
+- Search functionality for journal entries (web UI)
 - Export capabilities (PDF, markdown)
 - Calendar view for journal entries
 - Todo recurring tasks
 - Mobile responsiveness improvements
 - Advanced AI tool calling (calendar integration, reminders)
+- MCP server tool expansion (create/update operations, workspace switching)
 
 ### Todo-Based AI Chat Architecture
 - **Context-Aware AI**: AI knows the specific todo, its comments, related todos, and journal entries
