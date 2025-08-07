@@ -2,6 +2,7 @@ defmodule LifeOrgWeb.Components.JournalComponent do
   use Phoenix.Component
   import LifeOrgWeb.MarkdownHelper
   import LifeOrgWeb.Components.ModalComponent
+  import LifeOrgWeb.Components.RichTextEditorComponent
 
   def journal_column(assigns) do
     ~H"""
@@ -19,10 +20,10 @@ defmodule LifeOrgWeb.Components.JournalComponent do
             </svg>
           </button>
         </div>
-        
+
         <.journal_form processing_journal_todos={assigns[:processing_journal_todos] || false} />
         <.journal_entries entries={@entries} />
-        
+
         <!-- Edit Journal Entry Modal -->
         <%= if assigns[:editing_entry] do %>
           <.modal id="edit-journal-modal" title="Edit Journal Entry">
@@ -37,15 +38,16 @@ defmodule LifeOrgWeb.Components.JournalComponent do
   def journal_form(assigns) do
     assigns = assign(assigns, :today, Date.utc_today() |> Date.to_string())
     assigns = assign_new(assigns, :processing_journal_todos, fn -> false end)
-    
+
     ~H"""
     <form id="journal-form" phx-submit="create_journal_entry" class="mb-6">
-      <textarea
+      <.rich_text_editor
         id="journal-content"
         name="journal_entry[content]"
         placeholder="Write your thoughts..."
-        class="w-full p-3 border border-gray-300 rounded-lg resize-none h-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        required
+        required={true}
+        min_height="150px"
+        class="mb-3"
       />
       <div class="mt-3 space-y-2">
         <input
@@ -133,25 +135,29 @@ defmodule LifeOrgWeb.Components.JournalComponent do
   end
 
   def edit_journal_form(assigns) do
-    entry_date = if assigns.entry.entry_date do
-      Date.to_string(assigns.entry.entry_date)
-    else
-      Date.to_string(Date.utc_today())
-    end
+    entry_date =
+      if assigns.entry.entry_date do
+        Date.to_string(assigns.entry.entry_date)
+      else
+        Date.to_string(Date.utc_today())
+      end
+
     assigns = assign(assigns, :entry_date_string, entry_date)
-    
+
     ~H"""
     <form phx-submit="update_journal_entry" phx-value-id={@entry.id}>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-          <textarea
+          <.rich_text_editor
+            id={"edit-journal-content-#{@entry.id}"}
             name="journal_entry[content]"
-            class="w-full p-3 border border-gray-300 rounded-lg resize-none h-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          ><%= @entry.content %></textarea>
+            label="Content"
+            value={@entry.content}
+            required={true}
+            min_height="150px"
+          />
         </div>
-        
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Date</label>
           <input
@@ -162,7 +168,7 @@ defmodule LifeOrgWeb.Components.JournalComponent do
             required
           />
         </div>
-        
+
         <div class="flex justify-end gap-3">
           <button
             type="button"

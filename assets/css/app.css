@@ -3,3 +3,156 @@
 @import "tailwindcss/utilities";
 
 /* This file is for your main application CSS */
+
+/* Rich Text Editor Styles */
+.rich-text-editor .ql-editor {
+  min-height: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.rich-text-editor .ql-editor.ql-blank::before {
+  font-style: normal;
+  color: #9ca3af;
+}
+
+.rich-text-editor .ql-toolbar {
+  border-top: 1px solid #d1d5db;
+  border-left: 1px solid #d1d5db;
+  border-right: 1px solid #d1d5db;
+  border-bottom: none;
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+}
+
+.rich-text-editor .ql-container {
+  border-left: 1px solid #d1d5db;
+  border-right: 1px solid #d1d5db;
+  border-bottom: 1px solid #d1d5db;
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+
+.rich-text-editor .ql-editor h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.rich-text-editor .ql-editor h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.rich-text-editor .ql-editor ul,
+.rich-text-editor .ql-editor ol {
+  margin-bottom: 0.75rem;
+}
+
+.rich-text-editor .ql-editor blockquote {
+  border-left: 4px solid #e5e7eb;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  font-style: italic;
+  color: #6b7280;
+}
+
+.rich-text-editor .ql-editor code {
+  background-color: #f3f4f6;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.rich-text-editor .ql-editor pre {
+  background-color: #f3f4f6;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+
+/* Focus styles */
+.rich-text-editor:focus-within .ql-toolbar {
+  border-color: #3b82f6;
+}
+
+.rich-text-editor:focus-within .ql-container {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+/* Checkbox styling in rich text editor */
+.rich-text-editor .ql-editor input[type="checkbox"] {
+  margin-right: 0.5rem;
+  margin-top: 0;
+  margin-bottom: 0;
+  vertical-align: middle;
+  cursor: pointer;
+  width: 1rem;
+  height: 1rem;
+}
+
+.rich-text-editor .ql-editor ul li {
+  list-style: none;
+  padding-left: 0;
+}
+
+.rich-text-editor .ql-editor ul li:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.25rem;
+}
+
+/* Style paragraphs containing checkboxes in rich text editor */
+.rich-text-editor .ql-editor p:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+/* Better spacing for todo lists */
+.rich-text-editor .ql-editor ul {
+  padding-left: 1rem;
+}
+
+.rich-text-editor .ql-editor ol {
+  padding-left: 1rem;
+}
+
+/* Checkbox styling in todo descriptions (outside rich text editor) */
+input[type="checkbox"][data-todo-checkbox] {
+  margin-right: 0.5rem;
+  margin-top: 0;
+  margin-bottom: 0;
+  vertical-align: middle;
+  cursor: pointer;
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Style paragraphs containing checkboxes */
+p:has(input[type="checkbox"][data-todo-checkbox]) {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+/* Ensure checkbox text doesn't wrap weirdly */
+p input[type="checkbox"][data-todo-checkbox] + text {
+  flex: 1;
+}
+
+/* Non-interactive checkboxes in list view */
+input[type="checkbox"].checkbox-readonly {
+  cursor: default;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Style paragraphs containing readonly checkboxes */
+p:has(input[type="checkbox"].checkbox-readonly) {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
