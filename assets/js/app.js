@@ -147,6 +147,11 @@ Hooks.InteractiveCheckboxes = {
   mounted() {
     this.setupCheckboxListeners();
 
+    // Listen for custom event from LinkPreviewLoader to re-setup listeners
+    this.el.addEventListener('checkbox-setup-needed', () => {
+      this.setupCheckboxListeners();
+    });
+
     // Handle the completion event from server
     this.handleEvent("checkbox_toggle_complete", ({ todo_id, checkbox_index, checked }) => {
       // Confirm the checkbox state matches what server says
@@ -167,15 +172,17 @@ Hooks.InteractiveCheckboxes = {
     const checkboxes = this.el.querySelectorAll('input[type="checkbox"][data-todo-checkbox]');
 
     checkboxes.forEach(checkbox => {
-      // Skip if already has listener
-      if (checkbox.hasAttribute('data-listener-attached')) return;
+      // Only attach if not already attached (avoid duplicates)
+      if (checkbox.hasAttribute('data-listener-attached')) {
+        return;
+      }
 
       // Store initial state
       checkbox.setAttribute('data-current-state', checkbox.checked);
       checkbox.setAttribute('data-listener-attached', 'true');
 
-      // Add click listener
-      checkbox.addEventListener('click', (event) => {
+      // Add click listener with proper cleanup
+      const clickHandler = (event) => {
         // Prevent all propagation
         event.preventDefault();
         event.stopPropagation();
@@ -198,7 +205,12 @@ Hooks.InteractiveCheckboxes = {
           "checkbox-index": checkboxIndex,
           "checked": isChecked.toString()
         });
-      }, true);
+      };
+
+      checkbox.addEventListener('click', clickHandler, true);
+      
+      // Store handler reference for potential cleanup
+      checkbox._checkboxHandler = clickHandler;
     });
   }
 };
@@ -217,11 +229,23 @@ Hooks.LinkPreviewLoader = {
     const content = this.el.getAttribute('data-content');
     if (!content) return;
 
-    // Only process if we haven't already processed this content
-    if (this.el.getAttribute('data-processed') === 'true') return;
+    // Check if content has changed since last processing
+    const lastContent = this.el.getAttribute('data-last-content');
+    if (lastContent === content && this.el.getAttribute('data-processed') === 'true') {
+      return; // Skip if content hasn't changed
+    }
 
-    // Mark as processed to avoid reprocessing
+    // Only process if there are actual URLs to process
+    if (!content.match(/https?:\/\/[^\s]+/)) {
+      // No URLs found, just mark as processed without server call
+      this.el.setAttribute('data-processed', 'true');
+      this.el.setAttribute('data-last-content', content);
+      return;
+    }
+
+    // Mark as processed and store the content we're processing
     this.el.setAttribute('data-processed', 'true');
+    this.el.setAttribute('data-last-content', content);
     
     // Store the current HTML (with interactive checkboxes) as a fallback
     const currentHTML = this.el.innerHTML;
@@ -233,6 +257,8 @@ Hooks.LinkPreviewLoader = {
     this.pushEvent("process_link_previews", { content: content, html: currentHTML }, (reply) => {
       if (reply.processed_content) {
         this.el.innerHTML = reply.processed_content;
+        // After replacing content, trigger any parent InteractiveCheckboxes hook to re-setup listeners
+        this.triggerParentCheckboxSetup();
       } else if (reply.error) {
         console.warn("Link preview processing failed:", reply.error);
         // Use the current HTML (with checkboxes) as fallback instead of raw content
@@ -252,6 +278,21 @@ Hooks.LinkPreviewLoader = {
         </div>
       </div>
     `;
+  },
+
+  triggerParentCheckboxSetup() {
+    // Find the parent element with InteractiveCheckboxes hook and trigger it to re-setup listeners
+    let parent = this.el.parentElement;
+    while (parent) {
+      if (parent.getAttribute && parent.getAttribute('phx-hook') && 
+          parent.getAttribute('phx-hook').includes('InteractiveCheckboxes')) {
+        // Use a custom event to trigger the hook to re-setup
+        const event = new CustomEvent('checkbox-setup-needed');
+        parent.dispatchEvent(event);
+        break;
+      }
+      parent = parent.parentElement;
+    }
   }
 };
 

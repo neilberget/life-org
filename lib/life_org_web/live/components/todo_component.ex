@@ -441,14 +441,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
 
         <div>
-          <.rich_text_editor
-            id={"edit-todo-description-#{@todo.id}"}
+          <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+          <textarea
             name="todo[description]"
-            label="Description"
-            value={@todo.description || ""}
-            placeholder="Optional description..."
-            min_height="120px"
-          />
+            rows="6"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+            placeholder="Optional description... Use - [ ] for checkboxes"
+          ><%= @todo.description || "" %></textarea>
+          <p class="text-xs text-gray-500 mt-1">Supports markdown. Use <code>- [ ]</code> for unchecked and <code>- [x]</code> for checked items.</p>
         </div>
 
         <div>
@@ -533,13 +533,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
 
         <div>
-          <.rich_text_editor
-            id="add-todo-description"
+          <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+          <textarea
             name="todo[description]"
-            label="Description"
-            placeholder="Optional description..."
-            min_height="120px"
-          />
+            rows="6"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+            placeholder="Optional description... Use - [ ] for checkboxes"
+          ></textarea>
+          <p class="text-xs text-gray-500 mt-1">Supports markdown. Use <code>- [ ]</code> for unchecked and <code>- [x]</code> for checked items.</p>
         </div>
 
         <div>

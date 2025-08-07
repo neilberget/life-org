@@ -168,50 +168,61 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("toggle_description_checkbox", params, socket) do
     %{"todo-id" => todo_id, "checkbox-index" => checkbox_index, "checked" => checked_str} = params
-    todo = WorkspaceService.get_todo(String.to_integer(todo_id))
+    
+    # Handle "preview" case where we don't have a real todo
+    if todo_id == "preview" do
+      # For preview mode, we don't persist changes
+      {:noreply, socket}
+    else
+      todo = WorkspaceService.get_todo(String.to_integer(todo_id))
 
-    # checkbox_index might already be an integer from JavaScript
-    checkbox_index =
-      if is_integer(checkbox_index), do: checkbox_index, else: String.to_integer(checkbox_index)
+      # checkbox_index might already be an integer from JavaScript
+      checkbox_index =
+        if is_integer(checkbox_index), do: checkbox_index, else: String.to_integer(checkbox_index)
 
-    checked = checked_str == "true"
+      checked = checked_str == "true"
 
-    case update_description_checkbox(todo.description, checkbox_index, checked) do
+      case update_description_checkbox(todo.description, checkbox_index, checked) do
       {:ok, updated_description} ->
-        {:ok, updated_todo} =
-          WorkspaceService.update_todo(todo, %{description: updated_description})
+        case WorkspaceService.update_todo(todo, %{description: updated_description}) do
+          {:ok, updated_todo} ->
+            
+            # Update both todos list and viewing_todo if it's the same
+            todos = update_todo_in_list(socket.assigns.todos, updated_todo)
 
-        # Update both todos list and viewing_todo if it's the same
-        todos = update_todo_in_list(socket.assigns.todos, updated_todo)
+            socket =
+              socket
+              |> assign(:todos, todos)
 
-        socket =
-          socket
-          |> assign(:todos, todos)
+            # If we're viewing this todo, update it and keep modal open
+            socket =
+              if socket.assigns[:viewing_todo] && socket.assigns.viewing_todo.id == updated_todo.id do
+                socket
+                |> assign(:viewing_todo, updated_todo)
+                |> push_event("checkbox_toggle_complete", %{
+                  todo_id: todo.id,
+                  checkbox_index: checkbox_index,
+                  checked: checked
+                })
+                |> push_event("show_modal", %{id: "view-todo-modal"})
+              else
+                socket
+                |> push_event("checkbox_toggle_complete", %{
+                  todo_id: todo.id,
+                  checkbox_index: checkbox_index,
+                  checked: checked
+                })
+              end
 
-        # If we're viewing this todo, update it and keep modal open
-        socket =
-          if socket.assigns[:viewing_todo] && socket.assigns.viewing_todo.id == updated_todo.id do
-            socket
-            |> assign(:viewing_todo, updated_todo)
-            |> push_event("checkbox_toggle_complete", %{
-              todo_id: todo.id,
-              checkbox_index: checkbox_index,
-              checked: checked
-            })
-            |> push_event("show_modal", %{id: "view-todo-modal"})
-          else
-            socket
-            |> push_event("checkbox_toggle_complete", %{
-              todo_id: todo.id,
-              checkbox_index: checkbox_index,
-              checked: checked
-            })
-          end
-
-        {:noreply, socket}
+            {:noreply, socket}
+          {:error, changeset} ->
+            IO.inspect(changeset.errors, label: "Error updating todo")
+            {:noreply, put_flash(socket, :error, "Failed to update todo: #{inspect(changeset.errors)}")}
+        end
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed to update checkbox: #{reason}")}
+      end
     end
   end
 
@@ -1428,14 +1439,23 @@ defmodule LifeOrgWeb.OrganizerLive do
 
       {updated_lines, _} =
         Enum.map_reduce(lines, 0, fn line, checkbox_count ->
-          if String.contains?(line, "- [") do
+          # Only count actual checkboxes ([ ] or [x]), not other patterns like [TEST]
+          if String.match?(line, ~r/- \[(x|\s*)\]/i) do
             if checkbox_count == checkbox_index do
               # This is the checkbox we want to update
-              if checked do
-                {String.replace(line, "- [ ]", "- [x]", global: false), checkbox_count + 1}
-              else
-                {String.replace(line, "- [x]", "- [ ]", global: false), checkbox_count + 1}
-              end
+              updated_line = 
+                if checked do
+                  # Set to checked - handle both [ ] and [x] cases
+                  line
+                  |> String.replace(~r/- \[\s*\]/, "- [x]", global: false)
+                  |> String.replace(~r/- \[x\]/i, "- [x]", global: false)
+                else
+                  # Set to unchecked - handle both [ ] and [x] cases  
+                  line
+                  |> String.replace(~r/- \[x\]/i, "- [ ]", global: false)
+                  |> String.replace(~r/- \[\s*\]/, "- [ ]", global: false)
+                end
+              {updated_line, checkbox_count + 1}
             else
               {line, checkbox_count + 1}
             end

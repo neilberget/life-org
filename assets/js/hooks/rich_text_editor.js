@@ -23,17 +23,48 @@ let RichTextEditor = {
             }
         });
 
-        // Handle list items with checkboxes
-        this.turndownService.addRule('taskListItem', {
+        // Handle paragraphs with checkboxes (our checkbox format)
+        this.turndownService.addRule('checkboxParagraph', {
             filter: function (node) {
-                return (node.nodeName === 'LI' || node.nodeName === 'P') &&
-                    node.querySelector('input[type="checkbox"]');
+                const hasCheckbox = node.nodeName === 'P' && node.querySelector('input[type="checkbox"]');
+                if (hasCheckbox) {
+                    console.log("Found paragraph with checkbox:", node.outerHTML);
+                }
+                return hasCheckbox;
+            },
+            replacement: function (content, node) {
+                console.log("Converting checkbox paragraph:", node.outerHTML, "content:", content);
+                
+                const checkbox = node.querySelector('input[type="checkbox"]');
+                const isChecked = checkbox && checkbox.checked;
+                
+                // Extract just the text content, removing any checkbox HTML
+                const textNodes = [];
+                for (let child of node.childNodes) {
+                    if (child.nodeType === Node.TEXT_NODE) {
+                        textNodes.push(child.textContent);
+                    } else if (child.nodeName !== 'INPUT') {
+                        textNodes.push(child.textContent);
+                    }
+                }
+                const text = textNodes.join('').trim();
+                
+                const result = '- ' + (isChecked ? '[x]' : '[ ]') + ' ' + text + '\n\n';
+                console.log("Checkbox conversion result:", result);
+                return result;
+            }
+        });
+
+        // Handle list items with checkboxes (fallback)
+        this.turndownService.addRule('checkboxListItem', {
+            filter: function (node) {
+                return node.nodeName === 'LI' && node.querySelector('input[type="checkbox"]');
             },
             replacement: function (content, node) {
                 const checkbox = node.querySelector('input[type="checkbox"]');
                 const isChecked = checkbox && checkbox.checked;
-                const text = content.replace(/^\s*\[.\]\s*/, ''); // Remove any existing checkbox syntax
-                return (isChecked ? '[x]' : '[ ]') + ' ' + text + '\n';
+                const text = content.replace(/^\s*/, '').trim();
+                return '- ' + (isChecked ? '[x]' : '[ ]') + ' ' + text + '\n';
             }
         });
 
@@ -156,8 +187,11 @@ let RichTextEditor = {
 
     getMarkdownContent() {
         const html = this.quill.root.innerHTML;
+        console.log("Converting HTML to markdown:", html);
+        
         // Convert HTML to Markdown
         let markdown = this.turndownService.turndown(html);
+        console.log("Initial markdown:", markdown);
 
         // Clean up any escaped characters that might interfere with checkbox syntax
         markdown = markdown
@@ -166,12 +200,13 @@ let RichTextEditor = {
             .replace(/\n\n+/g, '\n\n')    // Normalize multiple newlines
             .replace(/\[\]/g, '[ ]')  // Ensure space in empty checkboxes
             .replace(/\[x\]/gi, '[x]') // Ensure proper checked checkbox format
-            .replace(/(\d+)\.\s*\[ \]/g, '[ ]') // Convert numbered list checkboxes to simple checkboxes
-            .replace(/(\d+)\.\s*\[x\]/gi, '[x]') // Convert numbered list checked checkboxes to simple checkboxes
-            .replace(/(\d+)\.\s*- \[ \]/g, '[ ]') // Convert numbered list bullet checkboxes to simple checkboxes
-            .replace(/(\d+)\.\s*- \[x\]/gi, '[x]') // Convert numbered list bullet checked checkboxes to simple checkboxes
+            .replace(/(\d+)\.\s*\[ \]/g, '- [ ]') // Convert numbered list checkboxes to simple checkboxes
+            .replace(/(\d+)\.\s*\[x\]/gi, '- [x]') // Convert numbered list checked checkboxes to simple checkboxes
+            .replace(/(\d+)\.\s*- \[ \]/g, '- [ ]') // Convert numbered list bullet checkboxes to simple checkboxes
+            .replace(/(\d+)\.\s*- \[x\]/gi, '- [x]') // Convert numbered list bullet checked checkboxes to simple checkboxes
             .trim();
 
+        console.log("Final markdown:", markdown);
         return markdown;
     },
 
@@ -180,6 +215,8 @@ let RichTextEditor = {
             return '<p><br></p>';
         }
 
+        console.log("Converting markdown to HTML:", markdown);
+
         // Split into lines for better processing
         let lines = markdown.split('\n');
         let html = '';
@@ -187,6 +224,7 @@ let RichTextEditor = {
 
         for (let line of lines) {
             const trimmed = line.trim();
+            console.log("Processing line:", trimmed);
 
             // Handle headers
             if (trimmed.startsWith('# ')) {
@@ -195,14 +233,19 @@ let RichTextEditor = {
                 html += '<h2>' + trimmed.slice(3) + '</h2>';
             }
             // Handle todo checkboxes (with or without dashes)
-            else if (trimmed.match(/^- \[ \]/) || trimmed.match(/^\[ \]/)) {
+            else if (trimmed.match(/^-\s*\[\s*\]/) || trimmed.match(/^\[\s*\]/)) {
                 if (inList) { html += '</ul>'; inList = false; }
                 const text = trimmed.replace(/^(-\s*)?\[\s*\]\s*/, '');
                 html += '<p><input type="checkbox"> ' + this.processInlineMarkdown(text) + '</p>';
-            } else if (trimmed.match(/^- \[x\]/i) || trimmed.match(/^\[x\]/i)) {
+            } else if (trimmed.match(/^-\s*\[x\]/i) || trimmed.match(/^\[x\]/i)) {
                 if (inList) { html += '</ul>'; inList = false; }
                 const text = trimmed.replace(/^(-\s*)?\[x\]\s*/i, '');
                 html += '<p><input type="checkbox" checked> ' + this.processInlineMarkdown(text) + '</p>';
+            }
+            // Handle brackets that are NOT checkboxes (like [TEST]) - preserve as literal text
+            else if (trimmed.match(/^- \[[^\]]*\]/)) {
+                if (inList) { html += '</ul>'; inList = false; }
+                html += '<p>' + this.processInlineMarkdown(trimmed) + '</p>';
             }
             // Handle regular bullets
             else if (trimmed.startsWith('- ')) {
