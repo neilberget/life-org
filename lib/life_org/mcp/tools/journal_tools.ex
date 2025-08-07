@@ -54,23 +54,13 @@ defmodule LifeOrg.MCP.Tools.JournalTools do
     else
       entries
       |> Enum.map(fn entry ->
-        mood_emoji = case entry.mood do
-          "happy" -> "😊"
-          "sad" -> "😢" 
-          "angry" -> "😠"
-          "excited" -> "🤩"
-          "calm" -> "😌"
-          "anxious" -> "😰"
-          _ -> ""
-        end
-        
         content_preview = if String.length(entry.content) > 100 do
           String.slice(entry.content, 0, 100) <> "..."
         else
           entry.content
         end
         
-        "📅 #{entry.entry_date} #{mood_emoji} - #{content_preview}"
+        "📅 #{entry.entry_date} - #{content_preview}"
       end)
       |> Enum.join("\n")
     end
@@ -83,7 +73,6 @@ defmodule LifeOrg.MCP.Tools.JournalTools do
     %{
       id: entry.id,
       content: entry.content,
-      mood: entry.mood,
       tags: entry.tags || [],
       entry_date: to_string(entry.entry_date),
       inserted_at: DateTime.to_iso8601(entry.inserted_at),

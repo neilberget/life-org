@@ -113,7 +113,7 @@ defmodule LifeOrg.AIHandler do
   defp build_system_prompt(journal_entries, todos) do
     recent_entries = Enum.take(journal_entries, 5)
     entries_context = Enum.map_join(recent_entries, "\n\n", fn entry ->
-      "Date: #{Calendar.strftime(entry.inserted_at, "%B %d, %Y")}\nMood: #{entry.mood || "N/A"}\nContent: #{entry.content}"
+      "Date: #{Calendar.strftime(entry.inserted_at, "%B %d, %Y")}\nContent: #{entry.content}"
     end)
     
     # Get existing tags for context
@@ -488,8 +488,7 @@ defmodule LifeOrg.AIHandler do
       _ ->
         formatted = Enum.map_join(entries, "\n\n", fn entry ->
           date = Calendar.strftime(entry.inserted_at, "%B %d, %Y")
-          mood = if entry.mood && entry.mood != "", do: " (#{entry.mood})", else: ""
-          "#{date}#{mood}: #{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
+          "#{date}: #{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
         end)
         "Recent journal entries:\n#{formatted}"
     end
@@ -544,7 +543,6 @@ defmodule LifeOrg.AIHandler do
 
   defp format_single_journal_entry(entry, is_originating) do
     date = Calendar.strftime(entry.entry_date || entry.inserted_at, "%B %d, %Y")
-    mood = if entry.mood && entry.mood != "", do: " (#{entry.mood})", else: ""
     
     # For originating entry, show full content; for others, truncate as before
     content = if is_originating do
@@ -553,7 +551,7 @@ defmodule LifeOrg.AIHandler do
       "#{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
     end
     
-    "#{date}#{mood}: #{content}"
+    "#{date}: #{content}"
   end
 
   defp build_todo_tools_definition(_todo, all_todos) do

@@ -1,4 +1,4 @@
-- remove mood box from journals
+- add web search to todo ai chat: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool
 - Archive journal entries -- or better verb, but they get excluded from future context
 - Integrations. If i paste an asana link into a todo, should be smart
 - expand chat view

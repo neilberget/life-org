@@ -46,9 +46,6 @@ defmodule LifeOrgWeb.JournalEntryLive do
           
           <div class="text-sm text-gray-600">
             <%= Calendar.strftime(@entry.entry_date, "%A, %B %d, %Y") %>
-            <%= if @entry.mood do %>
-              • <span class="capitalize"><%= @entry.mood %></span>
-            <% end %>
           </div>
         </div>
 

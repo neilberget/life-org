@@ -48,23 +48,14 @@ defmodule LifeOrgWeb.Components.JournalComponent do
         required
       />
       <div class="mt-3 space-y-2">
-        <div class="flex gap-2">
-          <input
-            id="journal-date"
-            type="date"
-            name="journal_entry[entry_date]"
-            value={@today}
-            class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
-          <input
-            id="journal-mood"
-            type="text"
-            name="journal_entry[mood]"
-            placeholder="Mood (optional)"
-            class="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+        <input
+          id="journal-date"
+          type="date"
+          name="journal_entry[entry_date]"
+          value={@today}
+          class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
         <div class="relative">
           <button type="submit" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors" disabled={@processing_journal_todos}>
             <%= if @processing_journal_todos do %>
@@ -132,11 +123,6 @@ defmodule LifeOrgWeb.Components.JournalComponent do
           </button>
         </div>
       </div>
-      <%= if @entry.mood do %>
-        <span class="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full mb-2">
-          <%= @entry.mood %>
-        </span>
-      <% end %>
       <div class="text-gray-700 prose prose-sm max-w-none">
         <div id={"journal-preview-#{@entry.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@entry.content)}>
           <%= render_markdown(@entry.content) %>
@@ -166,28 +152,15 @@ defmodule LifeOrgWeb.Components.JournalComponent do
           ><%= @entry.content %></textarea>
         </div>
         
-        <div class="flex gap-4">
-          <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Date</label>
-            <input
-              type="date"
-              name="journal_entry[entry_date]"
-              value={@entry_date_string}
-              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          
-          <div class="flex-1">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Mood</label>
-            <input
-              type="text"
-              name="journal_entry[mood]"
-              value={@entry.mood || ""}
-              placeholder="Optional"
-              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Date</label>
+          <input
+            type="date"
+            name="journal_entry[entry_date]"
+            value={@entry_date_string}
+            class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
         </div>
         
         <div class="flex justify-end gap-3">
