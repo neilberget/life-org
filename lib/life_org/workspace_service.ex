@@ -118,6 +118,7 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   def delete_todo(%Todo{} = todo) do
+    # Database will cascade delete conversations and chat_messages automatically
     Repo.delete(todo)
   end
 

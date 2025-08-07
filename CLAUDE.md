@@ -44,7 +44,6 @@ todo_comments:
 1. **Journal Management**
    - Markdown support with live rendering
    - Date picker defaulting to today
-   - Mood tracking
    - Full CRUD operations with modal editing
 
 2. **AI Chat Assistant**
