@@ -23,6 +23,9 @@ defmodule LifeOrgWeb.Router do
     # Integration settings
     get "/settings/integrations", AuthController, :settings
     delete "/auth/:provider", AuthController, :disconnect
+    
+    # Admin pages
+    live "/admin/api_usage", AdminApiUsageLive
   end
 
   # OAuth2 authentication routes

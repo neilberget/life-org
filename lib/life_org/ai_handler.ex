@@ -60,34 +60,23 @@ defmodule LifeOrg.AIHandler do
     end
 
     system_prompt = """
-    You are a helpful assistant that manages todos based on journal entries.
+    You are a helpful assistant that extracts actionable todos from journal entries.
     
     EXISTING TODOS:
     #{existing_todos_context}
     
     #{tags_context}
     
-    Analyze the journal entry and:
-    1. Identify any NEW actionable tasks that aren't already covered by existing todos
-    2. Identify any updates needed to existing todos (priority changes, additional details, completion status, tags)
-    3. Avoid creating duplicates - if a similar task already exists, update it instead
+    Create separate todos for each actionable task mentioned in the journal entry. Use multiple create_todo tool calls - one for each task.
     
-    Guidelines for priority:
-    - High: Urgent tasks, deadlines, important meetings
-    - Medium: Regular tasks, planning items, follow-ups  
-    - Low: Ideas, someday items, optional tasks
+    For each todo:
+    - Use a clear, descriptive title
+    - Set appropriate priority (high/medium/low)
+    - Add relevant tags for categorization
+    - Include description if the journal provides additional context
+    - For complex tasks with subtasks, you can include GitHub-style markdown checkboxes in the description (- [ ] unchecked, - [x] checked) that will become interactive in the UI
     
-    Guidelines for tags:
-    - Use existing tags when applicable to maintain consistency
-    - Suggest relevant new tags based on the task context (work, personal, urgent, project, store, health, etc.)
-    - Consider the content of the journal entry to infer appropriate categorizations
-    
-    Be smart about updates:
-    - If journal mentions urgency/deadlines for existing tasks, increase priority
-    - If journal provides more details about existing tasks, update description
-    - If journal indicates task is done, mark as complete
-    - Add or update tags based on new context from journal entry
-    - Only create new todos for genuinely new actionable items
+    Only create new todos for tasks that don't already exist in the existing todos list above.
     """
     
     # Define tools for journal todo extraction
@@ -168,6 +157,11 @@ defmodule LifeOrg.AIHandler do
     
     Use existing tags when possible to maintain consistency, but feel free to suggest new tags when appropriate.
     
+    SUBTASK FORMATTING: When creating todo descriptions with subtasks, you can use GitHub-style markdown checkboxes that will become interactive:
+    - Use `- [ ]` for unchecked subtasks
+    - Use `- [x]` for checked subtasks
+    These will render as clickable checkboxes in the UI for easy progress tracking.
+    
     Be supportive, empathetic, and help the user organize their thoughts and tasks based on their journal entries. Use web search to provide current, relevant information when it would be helpful for their goals and tasks.
     """
   end
@@ -197,7 +191,7 @@ defmodule LifeOrg.AIHandler do
             },
             "description" => %{
               "type" => "string",
-              "description" => "Optional description with more details"
+              "description" => "Optional description with more details. You can include GitHub-style markdown checkboxes (- [ ] unchecked, - [x] checked) for subtasks that will become interactive in the UI."
             },
             "priority" => %{
               "type" => "string",
@@ -229,7 +223,7 @@ defmodule LifeOrg.AIHandler do
             },
             "description" => %{
               "type" => "string",
-              "description" => "New description for the todo"
+              "description" => "New description for the todo. You can include GitHub-style markdown checkboxes (- [ ] unchecked, - [x] checked) for subtasks that will become interactive in the UI."
             },
             "priority" => %{
               "type" => "string",
@@ -421,6 +415,11 @@ defmodule LifeOrg.AIHandler do
     - Understanding progress and obstacles from the comment history
     - Searching the web for current information, resources, or guidance related to the todo
 
+    SUBTASK FORMATTING: When updating or creating todo descriptions with subtasks, you can use GitHub-style markdown checkboxes that will become interactive:
+    - Use `- [ ]` for unchecked subtasks
+    - Use `- [x]` for checked subtasks
+    These will render as clickable checkboxes in the UI for easy progress tracking.
+
     You have access to web search capabilities to find current information, tutorials, best practices, or resources that would help complete this todo effectively. Use web search when it would provide valuable, up-to-date information for accomplishing the task.
 
     Be supportive and provide actionable advice specific to this todo. Use the available tools when the user wants to modify the todo, create related tasks, or needs current information from the internet.
@@ -586,7 +585,7 @@ defmodule LifeOrg.AIHandler do
             },
             "description" => %{
               "type" => "string",
-              "description" => "Optional description with more details"
+              "description" => "Optional description with more details. You can include GitHub-style markdown checkboxes (- [ ] unchecked, - [x] checked) for subtasks that will become interactive in the UI."
             },
             "priority" => %{
               "type" => "string",
@@ -614,7 +613,7 @@ defmodule LifeOrg.AIHandler do
             },
             "description" => %{
               "type" => "string",
-              "description" => "New description for the todo"
+              "description" => "New description for the todo. You can include GitHub-style markdown checkboxes (- [ ] unchecked, - [x] checked) for subtasks that will become interactive in the UI."
             },
             "priority" => %{
               "type" => "string",
