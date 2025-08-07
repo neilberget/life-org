@@ -203,11 +203,11 @@ end
 - [ ] Issue metadata fetching
 - [ ] Custom preview with status, type, priority
 
-#### GitHub Decorator ⬜
-- [ ] Create `LifeOrg.Integrations.Decorators.GitHub`
-- [ ] PR/Issue detection
-- [ ] Status badges, labels, assignees
-- [ ] Public vs private repo handling
+#### GitHub Decorator ✅
+- [x] Create `LifeOrg.Integrations.Decorators.GitHub`
+- [x] PR/Issue detection
+- [x] Status badges, labels, assignees
+- [x] Public vs private repo handling
 
 ### Phase 4: Content Importers ⬜
 

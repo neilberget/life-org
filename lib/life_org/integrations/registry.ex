@@ -140,18 +140,26 @@ defmodule LifeOrg.Integrations.Registry do
 
   defp register_builtin_integrations(state) do
     Logger.info("Registering built-in integrations...")
-    # Ensure the WebLink module is loaded before registration
-    Code.ensure_loaded!(LifeOrg.Integrations.Decorators.WebLink)
     
-    # Register built-in web link decorator
-    case register_integration_internal(state, LifeOrg.Integrations.Decorators.WebLink) do
-      {:ok, new_state} -> 
-        Logger.info("Successfully registered WebLink decorator")
-        {:ok, new_state}
-      {:error, reason} -> 
-        Logger.error("Failed to register WebLink decorator: #{inspect(reason)}")
-        {:ok, state}  # Continue even if registration fails
-    end
+    # List of built-in integration modules
+    builtin_modules = [
+      LifeOrg.Integrations.Decorators.WebLink,
+      LifeOrg.Integrations.Decorators.GitHub
+    ]
+    
+    # Register each module
+    Enum.reduce(builtin_modules, {:ok, state}, fn module, {:ok, current_state} ->
+      Code.ensure_loaded!(module)
+      
+      case register_integration_internal(current_state, module) do
+        {:ok, new_state} -> 
+          Logger.info("Successfully registered #{module}")
+          {:ok, new_state}
+        {:error, reason} -> 
+          Logger.error("Failed to register #{module}: #{inspect(reason)}")
+          {:ok, current_state}  # Continue even if registration fails
+      end
+    end)
   end
 
   defp register_integration_internal(state, module) do

@@ -92,6 +92,15 @@ todo_comments:
 - **Comprehensive logging**: Detailed logging for debugging API interactions
 - **Tool calling**: AI can execute actions (create/complete todos) via structured responses
 - **Web search integration**: Claude can search the web for current information and resources (120s timeout)
+- **Integration System**: Modular decorator pattern for rich link previews (web links, GitHub repos/issues/PRs)
+
+### Integration Architecture
+- **Decorator Pattern**: Platform-specific decorators (GitHub, Asana, etc.) provide rich previews for URLs
+- **Registry System**: Central registry manages integration discovery and priority-based URL matching
+- **Pipeline Processing**: Async content processing with caching to avoid blocking UI
+- **JavaScript Hooks**: LinkPreviewLoader handles client-side async loading of processed content
+- **Database Caching**: Link metadata cached in MySQL with TTL to reduce API calls
+- **Priority System**: Higher priority decorators (GitHub: 10) override generic web decorator (1)
 
 ### Development Workflow
 - **Fix warnings immediately**: Prefers clean compilation with zero warnings
