@@ -36,11 +36,7 @@
           <div class="ml-4">
             <p class="text-sm font-medium text-gray-500">Success Rate</p>
             <p class="text-2xl font-semibold text-gray-900">
-              <%= if @stats[:total_requests] && @stats[:total_requests] > 0 do %>
-                <%= Float.round((@stats[:success_count] || 0) / @stats[:total_requests] * 100, 1) %>%
-              <% else %>
-                0%
-              <% end %>
+              <%= calculate_success_rate(@stats[:total_requests], @stats[:success_count]) %>%
             </p>
           </div>
         </div>
@@ -74,7 +70,7 @@
           <div class="ml-4">
             <p class="text-sm font-medium text-gray-500">Avg Duration</p>
             <p class="text-2xl font-semibold text-gray-900">
-              <%= format_duration(if @stats[:avg_duration_ms], do: round(@stats[:avg_duration_ms]), else: nil) %>
+              <%= format_duration(@stats[:avg_duration_ms]) %>
             </p>
           </div>
         </div>
@@ -204,33 +200,124 @@
             </button>
           </div>
           
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <!-- Request Data -->
-            <div>
-              <h4 class="text-md font-semibold text-gray-900 mb-2">Request Data</h4>
-              <div class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                <pre class="text-sm text-gray-700 whitespace-pre-wrap"><%= Jason.encode!(@viewing_log.request_data, pretty: true) %></pre>
-              </div>
-            </div>
-            
-            <!-- Response Data -->
-            <div>
-              <h4 class="text-md font-semibold text-gray-900 mb-2">
-                <%= if @viewing_log.status == "success" do %>
-                  Response Data
-                <% else %>
-                  Error Details
-                <% end %>
-              </h4>
-              <div class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                <%= if @viewing_log.status == "success" && @viewing_log.response_data do %>
-                  <pre class="text-sm text-gray-700 whitespace-pre-wrap"><%= Jason.encode!(@viewing_log.response_data, pretty: true) %></pre>
-                <% else %>
-                  <p class="text-sm text-red-600"><%= @viewing_log.error_message %></p>
-                <% end %>
-              </div>
-            </div>
+          <!-- Tab Navigation -->
+          <div class="border-b border-gray-200 mb-6">
+            <nav class="-mb-px flex space-x-8">
+              <button 
+                phx-click="switch_tab" 
+                phx-value-tab="conversation"
+                class={"py-2 px-1 border-b-2 font-medium text-sm #{if assigns[:active_tab] == "conversation" || !assigns[:active_tab], do: "border-blue-500 text-blue-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}"}
+              >
+                💬 Conversation View
+              </button>
+              <button 
+                phx-click="switch_tab" 
+                phx-value-tab="raw"
+                class={"py-2 px-1 border-b-2 font-medium text-sm #{if assigns[:active_tab] == "raw", do: "border-blue-500 text-blue-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}"}
+              >
+                📄 Raw JSON
+              </button>
+            </nav>
           </div>
+
+          <%= if assigns[:active_tab] == "raw" do %>
+            <!-- Raw JSON View -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <!-- Request Data -->
+              <div>
+                <h4 class="text-md font-semibold text-gray-900 mb-2">Request Data</h4>
+                <div class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                  <pre class="text-sm text-gray-700 whitespace-pre-wrap"><%= Jason.encode!(@viewing_log.request_data, pretty: true) %></pre>
+                </div>
+              </div>
+              
+              <!-- Response Data -->
+              <div>
+                <h4 class="text-md font-semibold text-gray-900 mb-2">
+                  <%= if @viewing_log.status == "success" do %>
+                    Response Data
+                  <% else %>
+                    Error Details
+                  <% end %>
+                </h4>
+                <div class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                  <%= if @viewing_log.status == "success" && @viewing_log.response_data do %>
+                    <pre class="text-sm text-gray-700 whitespace-pre-wrap"><%= Jason.encode!(@viewing_log.response_data, pretty: true) %></pre>
+                  <% else %>
+                    <p class="text-sm text-red-600"><%= @viewing_log.error_message %></p>
+                  <% end %>
+                </div>
+              </div>
+            </div>
+          <% else %>
+            <!-- Human-Friendly Conversation View -->
+            <div class="space-y-6">
+              <%= if extract_system_prompt(@viewing_log.request_data) do %>
+                <!-- System Prompt -->
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="text-lg">⚙️</span>
+                    <h4 class="text-md font-semibold text-purple-800">System Prompt</h4>
+                  </div>
+                  <div class="bg-white rounded border p-3 max-h-48 overflow-y-auto">
+                    <pre class="text-sm text-gray-700 whitespace-pre-wrap font-mono"><%= extract_system_prompt(@viewing_log.request_data) %></pre>
+                  </div>
+                </div>
+              <% end %>
+
+              <!-- Messages -->
+              <div class="bg-white border border-gray-200 rounded-lg">
+                <div class="px-4 py-3 border-b border-gray-200">
+                  <h4 class="text-md font-semibold text-gray-900">💬 Conversation</h4>
+                </div>
+                <div class="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+                  <%= for message <- extract_messages(@viewing_log.request_data) do %>
+                    <div class={"p-4 #{if message["role"] == "user", do: "bg-blue-50", else: "bg-white"}"}>
+                      <div class="flex items-start gap-3">
+                        <span class="text-lg flex-shrink-0"><%= role_icon(message["role"]) %></span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-2">
+                            <span class={"text-sm font-semibold #{role_color(message["role"])}"}><%= String.capitalize(message["role"]) %></span>
+                          </div>
+                          <div class="prose prose-sm max-w-none">
+                            <pre class="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed"><%= render_message_content(message["content"]) %></pre>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  <% end %>
+
+                  <%= if @viewing_log.status == "success" && @viewing_log.response_data do %>
+                    <!-- Assistant Response -->
+                    <div class="p-4 bg-green-50">
+                      <div class="flex items-start gap-3">
+                        <span class="text-lg flex-shrink-0">🤖</span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-2">
+                            <span class="text-sm font-semibold text-green-700">Assistant</span>
+                          </div>
+                          <div class="prose prose-sm max-w-none">
+                            <pre class="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed"><%= render_message_content(extract_response_content(@viewing_log.response_data)) %></pre>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+
+              <%= if @viewing_log.status == "error" do %>
+                <!-- Error Details -->
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="text-lg">❌</span>
+                    <h4 class="text-md font-semibold text-red-800">Error Details</h4>
+                  </div>
+                  <p class="text-sm text-red-600"><%= @viewing_log.error_message %></p>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
           
           <!-- Metadata -->
           <div class="mt-6 bg-gray-50 rounded-lg p-4">

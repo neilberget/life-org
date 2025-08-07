@@ -371,6 +371,16 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Event Handling**: Checkbox clicks use `preventDefault()` and `stopPropagation()` to prevent unwanted interactions
 - **AI Checkbox Support**: AI system prompts are configured to understand GitHub-style markdown checkboxes (`- [ ]`/`- [x]`) in todo descriptions, enabling creation of interactive subtask lists
 
+## Admin & Monitoring
+
+### API Usage Logging
+- **ApiLog Schema**: Comprehensive logging of all AI API interactions (request_data, response_data, tokens, duration)
+- **Decimal Handling**: Database returns Decimal types for aggregated fields - helper functions convert safely to integers/floats
+- **Admin Interface**: `/admin/api_usage` provides dual-view API call inspection:
+  - **Conversation View**: Human-friendly display of system prompts, messages, and responses with proper styling
+  - **Raw JSON View**: Complete request/response data for debugging
+- **Visual Design**: Role-based styling with icons (👤 User, 🤖 Assistant, ⚙️ System) and color-coded backgrounds
+
 ## Database Constraints & Cascading Deletes
 - **Foreign Key Design**: All related entities use `on_delete: :delete_all` for proper cascading
 - **Todo Deletion**: Automatically cascades to delete conversations and chat messages
