@@ -197,7 +197,7 @@
               <LifeOrgWeb.Components.TodoComponent.incoming_todos_section todos={@incoming_todos} />
             <% end %>
             
-            <LifeOrgWeb.Components.TodoComponent.todo_list todos={filter_todos_by_tag(@todos, @tag_filter)} />
+            <LifeOrgWeb.Components.TodoComponent.todo_list todos={filter_todos_by_tag(@todos, @tag_filter)} deleting_todo_id={@deleting_todo_id} />
             
             <!-- Edit Todo Modal -->
             <%= if Map.get(assigns, :editing_todo) do %>
@@ -246,6 +246,7 @@
           show_todo_chat={@show_todo_chat}
           chat_todo_id={@chat_todo_id}
           todo_chat_messages={@todo_chat_messages}
+          deleting_todo_id={@deleting_todo_id}
         />
       <% end %>
     <% end %>

@@ -5,16 +5,19 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
   def todo_column(assigns) do
     unique_tags = get_unique_tags(assigns.all_todos || assigns.todos)
-    assigns = assign(assigns, :unique_tags, unique_tags)
-    |> assign(:show_tag_dropdown, false)
-    
+
+    assigns =
+      assign(assigns, :unique_tags, unique_tags)
+      |> assign(:show_tag_dropdown, false)
+      |> assign(:deleting_todo_id, Map.get(assigns, :deleting_todo_id))
+
     ~H"""
     <div class="w-1/2 bg-white overflow-y-auto">
       <div class="p-6">
         <div class="flex items-center justify-between mb-6">
           <div class="flex items-center gap-3">
             <h2 class="text-2xl font-bold text-gray-800">Todo List</h2>
-            
+
             <!-- Tag Filter Dropdown -->
             <%= if length(@unique_tags) > 0 do %>
               <div class="relative">
@@ -27,9 +30,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
                   </svg>
                 </button>
-                
+
                 <!-- Dropdown Menu -->
-                <div 
+                <div
                   id="tag-dropdown"
                   class="absolute left-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 hidden"
                   phx-click-away="hide_tag_dropdown"
@@ -72,7 +75,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 </div>
               </div>
             <% end %>
-            
+
             <%= if @tag_filter do %>
               <div class="flex items-center gap-2">
                 <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full flex items-center gap-1">
@@ -87,7 +90,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               </div>
             <% end %>
           </div>
-          
+
           <div class="flex gap-2">
             <button
               phx-click="add_todo"
@@ -109,33 +112,33 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             </button>
           </div>
         </div>
-        
+
         <!-- Incoming Todos Section -->
         <%= if Map.get(assigns, :incoming_todos, []) != [] && length(@incoming_todos) > 0 do %>
           <.incoming_todos_section todos={@incoming_todos} />
         <% end %>
-        
-        <.todo_list todos={@todos} />
-        
+
+        <.todo_list todos={@todos} deleting_todo_id={@deleting_todo_id} />
+
         <!-- Edit Todo Modal -->
         <%= if Map.get(assigns, :editing_todo) do %>
           <.modal id="edit-todo-modal" title="Edit Todo" size="large" z_index="high">
             <.edit_todo_form todo={@editing_todo} />
           </.modal>
         <% end %>
-        
+
         <!-- Add Todo Modal -->
         <%= if Map.get(assigns, :adding_todo, false) do %>
           <.modal id="add-todo-modal" title="Add New Todo" size="large" z_index="high">
             <.add_todo_form />
           </.modal>
         <% end %>
-        
+
         <!-- View Todo Modal -->
         <%= if Map.get(assigns, :viewing_todo) do %>
           <.modal id="view-todo-modal" title="Todo Details" size="large">
-            <.todo_view 
-              todo={@viewing_todo} 
+            <.todo_view
+              todo={@viewing_todo}
               comments={Map.get(assigns, :todo_comments, [])}
               show_todo_chat={Map.get(assigns, :show_todo_chat, false)}
               chat_todo_id={Map.get(assigns, :chat_todo_id)}
@@ -177,13 +180,13 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </button>
         </div>
       </div>
-      
+
       <div class="space-y-2">
         <%= for todo <- @todos do %>
           <.incoming_todo_item todo={todo} />
         <% end %>
       </div>
-      
+
       <p class="text-xs text-blue-600 mt-3">
         These todos were extracted from your journal entry. Review and accept or delete them.
       </p>
@@ -253,13 +256,16 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     ~H"""
     <div class="space-y-2">
       <%= for todo <- @todos do %>
-        <.todo_item todo={todo} />
+        <.todo_item todo={todo} deleting_todo_id={Map.get(assigns, :deleting_todo_id)} />
       <% end %>
     </div>
     """
   end
 
   def todo_item(assigns) do
+    is_being_deleted = Map.get(assigns, :deleting_todo_id) == assigns.todo.id
+    assigns = assign(assigns, :is_being_deleted, is_being_deleted)
+
     ~H"""
     <div class="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg group">
       <input
@@ -269,7 +275,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         phx-value-id={@todo.id}
         class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
       />
-      <div 
+      <div
         class="flex-1 cursor-pointer"
         phx-click="view_todo"
         phx-value-id={@todo.id}
@@ -288,16 +294,44 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
               </svg>
             </button>
-            <button
-              phx-click="delete_todo"
-              phx-value-id={@todo.id}
-              data-confirm="Delete this todo?"
-              class="text-red-500 hover:text-red-700"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-            </button>
+
+            <%= if @is_being_deleted do %>
+              <!-- Confirmation buttons when delete is clicked -->
+              <div class="flex gap-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+                <button
+                  phx-click="confirm_delete_todo"
+                  phx-value-id={@todo.id}
+                  class="text-red-600 hover:text-red-800 flex items-center gap-1"
+                  title="Confirm delete"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  </svg>
+                  <span class="text-xs">Delete</span>
+                </button>
+                <button
+                  phx-click="cancel_delete_todo"
+                  class="text-gray-500 hover:text-gray-700"
+                  title="Cancel delete"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            <% else %>
+              <!-- Normal delete button -->
+              <button
+                phx-click="show_delete_confirmation"
+                phx-value-id={@todo.id}
+                class="text-red-500 hover:text-red-700"
+                title="Delete todo"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+              </button>
+            <% end %>
           </div>
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
@@ -345,22 +379,25 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   end
 
   def edit_todo_form(assigns) do
-    due_date = if assigns.todo.due_date do
-      Date.to_string(assigns.todo.due_date)
-    else
-      ""
-    end
-    
-    due_time = if assigns.todo.due_time do
-      Time.to_string(assigns.todo.due_time)
-    else
-      ""
-    end
-    
-    assigns = assigns
-    |> assign(:due_date_string, due_date)
-    |> assign(:due_time_string, due_time)
-    
+    due_date =
+      if assigns.todo.due_date do
+        Date.to_string(assigns.todo.due_date)
+      else
+        ""
+      end
+
+    due_time =
+      if assigns.todo.due_time do
+        Time.to_string(assigns.todo.due_time)
+      else
+        ""
+      end
+
+    assigns =
+      assigns
+      |> assign(:due_date_string, due_date)
+      |> assign(:due_time_string, due_time)
+
     ~H"""
     <form phx-submit="update_todo" phx-value-id={@todo.id}>
       <div class="space-y-6">
@@ -374,7 +411,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             required
           />
         </div>
-        
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
           <textarea
@@ -383,7 +420,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             placeholder="Optional description..."
           ><%= @todo.description || "" %></textarea>
         </div>
-        
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Tags</label>
           <input
@@ -395,7 +432,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           />
           <p class="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
         </div>
-        
+
         <div class="flex gap-4">
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Priority</label>
@@ -408,7 +445,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               <option value="high" selected={@todo.priority == "high"}>High</option>
             </select>
           </div>
-          
+
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
             <input
@@ -418,7 +455,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
+
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Due Time</label>
             <input
@@ -429,7 +466,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             />
           </div>
         </div>
-        
+
         <div class="flex justify-end gap-3">
           <button
             type="button"
@@ -464,7 +501,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             autofocus
           />
         </div>
-        
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
           <textarea
@@ -473,7 +510,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             placeholder="Optional description..."
           ></textarea>
         </div>
-        
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Tags</label>
           <input
@@ -484,7 +521,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           />
           <p class="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
         </div>
-        
+
         <div class="flex gap-4">
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Priority</label>
@@ -497,7 +534,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               <option value="high">High</option>
             </select>
           </div>
-          
+
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
             <input
@@ -506,7 +543,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
+
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-2">Due Time</label>
             <input
@@ -516,7 +553,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             />
           </div>
         </div>
-        
+
         <div class="flex justify-end gap-3">
           <button
             type="button"
@@ -541,23 +578,25 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   defp priority_class("medium"), do: "bg-yellow-100 text-yellow-800"
   defp priority_class("low"), do: "bg-green-100 text-green-800"
   defp priority_class(_), do: "bg-gray-100 text-gray-800"
-  
+
   defp format_due_datetime(date, nil) do
     Date.to_string(date)
   end
-  
+
   defp format_due_datetime(date, time) do
     date_str = Date.to_string(date)
-    time_str = Time.to_string(time) |> String.slice(0, 5)  # Show only HH:MM
+    # Show only HH:MM
+    time_str = Time.to_string(time) |> String.slice(0, 5)
     "#{date_str} at #{time_str}"
   end
-  
+
   def todo_view(assigns) do
-    show_chat = Map.get(assigns, :show_todo_chat, false) && 
-                Map.get(assigns, :chat_todo_id) == assigns.todo.id
+    show_chat =
+      Map.get(assigns, :show_todo_chat, false) &&
+        Map.get(assigns, :chat_todo_id) == assigns.todo.id
 
     assigns = assign(assigns, :show_chat, show_chat)
-    
+
     ~H"""
     <div class={"flex gap-6 #{if @show_chat, do: "h-[600px]", else: ""}"}>
       <!-- Left Column: Todo Details -->
@@ -614,7 +653,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             </button>
           </div>
         </div>
-        
+
         <!-- Journal Entry Reference -->
         <%= if @todo.journal_entry do %>
           <div class="mb-6">
@@ -643,9 +682,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 </svg>
                 <span class="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full">1</span>
               </button>
-              
+
               <!-- Popup -->
-              <div 
+              <div
                 id={"journal-ref-popup-#{@todo.id}"}
                 class="hidden absolute left-0 top-8 z-50 w-80 bg-white rounded-lg shadow-lg border border-gray-200 p-4"
                 onclick="event.stopPropagation()"
@@ -661,7 +700,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                     <p class="text-gray-600 text-sm mb-3">
                       This todo was created from your journal entry on <%= Calendar.strftime(@todo.journal_entry.entry_date, "%A, %B %d, %Y") %>
                     </p>
-                    <a 
+                    <a
                       href={"/journal/#{@todo.journal_entry.id}"}
                       class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
                     >
@@ -672,7 +711,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                     </a>
                   </div>
                 </div>
-                
+
                 <!-- Close button -->
                 <button
                   onclick={"document.getElementById('journal-ref-popup-#{@todo.id}').classList.add('hidden')"}
@@ -702,7 +741,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             <% end %>
           </div>
         <% end %>
-        
+
         <!-- Description -->
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <div id={"todo-view-description-#{@todo.id}"} class="bg-gray-50 rounded-lg p-4 mb-6" phx-hook="InteractiveCheckboxes">
@@ -714,7 +753,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             <span style="display: none;" id={"trigger-#{@todo.id}"}><%= Map.get(assigns, :checkbox_update_trigger, 0) %></span>
           </div>
         <% end %>
-        
+
         <!-- Comments Section -->
         <div class="border-t pt-6">
           <div class="flex items-center justify-between mb-4">
@@ -726,7 +765,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               Add Comment
             </button>
           </div>
-          
+
           <!-- Add Comment Form -->
           <div id={"comment-form-#{@todo.id}"} class="mb-4 hidden">
             <form phx-submit="add_todo_comment" phx-value-todo-id={@todo.id}>
@@ -753,7 +792,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               </div>
             </form>
           </div>
-          
+
           <!-- Comments List -->
           <div class="space-y-3">
             <%= if length(@comments) == 0 do %>
@@ -766,7 +805,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </div>
         </div>
       </div>
-      
+
       <!-- Right Column: Chat Interface -->
       <%= if @show_chat do %>
         <div class="w-1/2 border-l pl-6">
@@ -787,17 +826,17 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 <p class="text-sm text-gray-500">Ask questions about this todo</p>
               </div>
             </div>
-            
+
             <!-- Conversation Selector -->
             <%= if length(Map.get(assigns, :todo_conversations, [])) > 1 do %>
               <div class="mb-3">
-                <select 
+                <select
                   phx-change="switch_todo_conversation"
                   phx-value-todo-id={@todo.id}
                   class="w-full p-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <%= for conversation <- Map.get(assigns, :todo_conversations, []) do %>
-                    <option 
+                    <option
                       value={conversation.id}
                       selected={Map.get(assigns, :current_todo_conversation) && Map.get(assigns, :current_todo_conversation).id == conversation.id}
                     >
@@ -807,7 +846,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 </select>
               </div>
             <% end %>
-            
+
             <div class="flex-1 bg-gray-50 rounded-lg p-4 overflow-y-auto mb-4">
               <div class="space-y-3">
                 <%= if length(Map.get(assigns, :todo_chat_messages, [])) == 0 do %>
@@ -842,7 +881,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 <% end %>
               </div>
             </div>
-            
+
             <form phx-submit="send_todo_chat_message" phx-value-todo-id={@todo.id} class="flex gap-2">
               <input
                 type="text"
@@ -864,7 +903,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     </div>
     """
   end
-  
+
   def comment_item(assigns) do
     ~H"""
     <div class="flex gap-3 p-3 bg-white border border-gray-200 rounded-lg">
@@ -905,10 +944,10 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   defp render_interactive_description(description, todo_id) do
     # Convert markdown to HTML first
     html = Earmark.as_html!(description)
-    
+
     # Transform checkboxes to be interactive
     interactive_html = make_checkboxes_interactive(html, todo_id)
-    
+
     # Return the interactive HTML directly for now
     # Link previews will be handled separately
     interactive_html
@@ -917,41 +956,63 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   defp make_checkboxes_interactive(html, todo_id) do
     # Handle the case where Earmark puts checkbox text on the next line after <li>
     lines = String.split(html, "\n")
-    
-    {processed_lines, _} = Enum.map_reduce(lines, 0, fn line, checkbox_index ->
-      trimmed_line = String.trim(line)
-      cond do
-        String.starts_with?(trimmed_line, "[ ]") ->
-          # Unchecked checkbox on its own line
-          updated_line = String.replace(line, "[ ]", 
-            "<input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">", 
-            global: false)
-          {updated_line, checkbox_index + 1}
-        
-        String.starts_with?(trimmed_line, "[x]") or String.starts_with?(trimmed_line, "[X]") ->
-          # Checked checkbox on its own line
-          updated_line = String.replace(line, ~r/\[x\]|\[X\]/i, 
-            "<input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">")
-          {updated_line, checkbox_index + 1}
-        
-        String.contains?(line, "<li>[ ]") ->
-          # Unchecked checkbox inline with <li>
-          updated_line = String.replace(line, "<li>[ ]", 
-            "<li><input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">", 
-            global: false)
-          {updated_line, checkbox_index + 1}
-        
-        String.contains?(line, "<li>[x]") or String.contains?(line, "<li>[X]") ->
-          # Checked checkbox inline with <li>
-          updated_line = String.replace(line, ~r/<li>\[x\]|<li>\[X\]/i, 
-            "<li><input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">")
-          {updated_line, checkbox_index + 1}
-        
-        true ->
-          {line, checkbox_index}
-      end
-    end)
-    
+
+    {processed_lines, _} =
+      Enum.map_reduce(lines, 0, fn line, checkbox_index ->
+        trimmed_line = String.trim(line)
+
+        cond do
+          String.starts_with?(trimmed_line, "[ ]") ->
+            # Unchecked checkbox on its own line
+            updated_line =
+              String.replace(
+                line,
+                "[ ]",
+                "<input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">",
+                global: false
+              )
+
+            {updated_line, checkbox_index + 1}
+
+          String.starts_with?(trimmed_line, "[x]") or String.starts_with?(trimmed_line, "[X]") ->
+            # Checked checkbox on its own line
+            updated_line =
+              String.replace(
+                line,
+                ~r/\[x\]|\[X\]/i,
+                "<input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
+              )
+
+            {updated_line, checkbox_index + 1}
+
+          String.contains?(line, "<li>[ ]") ->
+            # Unchecked checkbox inline with <li>
+            updated_line =
+              String.replace(
+                line,
+                "<li>[ ]",
+                "<li><input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">",
+                global: false
+              )
+
+            {updated_line, checkbox_index + 1}
+
+          String.contains?(line, "<li>[x]") or String.contains?(line, "<li>[X]") ->
+            # Checked checkbox inline with <li>
+            updated_line =
+              String.replace(
+                line,
+                ~r/<li>\[x\]|<li>\[X\]/i,
+                "<li><input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
+              )
+
+            {updated_line, checkbox_index + 1}
+
+          true ->
+            {line, checkbox_index}
+        end
+      end)
+
     Enum.join(processed_lines, "\n")
   end
 end
