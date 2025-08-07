@@ -16,6 +16,10 @@ defmodule LifeOrg.Application do
       {Finch, name: LifeOrg.Finch},
       # Start MCP server registry and task supervisor
       {Task.Supervisor, name: LifeOrg.MCP.TaskSupervisor},
+      # Start integration registry
+      LifeOrg.Integrations.Registry,
+      # Start link fetcher service
+      LifeOrg.LinkFetcher,
       # Start a worker by calling: LifeOrg.Worker.start_link(arg)
       # {LifeOrg.Worker, arg},
       # Start to serve requests, typically the last entry

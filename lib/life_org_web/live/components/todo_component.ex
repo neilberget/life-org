@@ -907,7 +907,11 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     html = Earmark.as_html!(description)
     
     # Transform checkboxes to be interactive
-    make_checkboxes_interactive(html, todo_id)
+    interactive_html = make_checkboxes_interactive(html, todo_id)
+    
+    # Return the interactive HTML directly for now
+    # Link previews will be handled separately
+    interactive_html
   end
 
   defp make_checkboxes_interactive(html, todo_id) do

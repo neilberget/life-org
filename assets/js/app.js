@@ -188,6 +188,53 @@ Hooks.InteractiveCheckboxes = {
   }
 }
 
+// Link preview loader hook
+Hooks.LinkPreviewLoader = {
+  mounted() {
+    this.loadPreviews()
+  },
+  
+  updated() {
+    this.loadPreviews()
+  },
+  
+  loadPreviews() {
+    const content = this.el.getAttribute('data-content')
+    if (!content) return
+    
+    // Only process if we haven't already processed this content
+    if (this.el.getAttribute('data-processed') === 'true') return
+    
+    // Mark as processed to avoid reprocessing
+    this.el.setAttribute('data-processed', 'true')
+    
+    // Show loading state
+    this.el.innerHTML = this.getLoadingHTML()
+    
+    // Process content with link previews
+    this.pushEvent("process_link_previews", {content: content}, (reply) => {
+      if (reply.processed_content) {
+        this.el.innerHTML = reply.processed_content
+      } else if (reply.error) {
+        console.warn("Link preview processing failed:", reply.error)
+        this.el.innerHTML = content
+      }
+    })
+  },
+  
+  getLoadingHTML() {
+    return `
+      <div class="flex gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 animate-pulse mt-2 mb-2">
+        <div class="w-12 h-12 bg-gray-300 rounded flex-shrink-0"></div>
+        <div class="flex-1 min-w-0">
+          <div class="h-4 bg-gray-300 rounded mb-2"></div>
+          <div class="h-3 bg-gray-300 rounded w-3/4 mb-2"></div>
+          <div class="h-3 bg-gray-300 rounded w-1/2"></div>
+        </div>
+      </div>
+    `
+  }
+}
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {

@@ -245,6 +245,31 @@ mix phx.server
 - **Modal State Preservation**: Special handling to keep todo view modal open during checkbox updates
 - **Markdown Rendering**: Custom `render_interactive_description/2` function converts markdown checkboxes to interactive HTML inputs
 
+## Integration System
+
+The application includes a **comprehensive integration system** that automatically enhances content with external information and provides extensibility for future integrations.
+
+### Architecture
+- **Multi-Type Integration Support**: Supports decorators (content enhancement), importers (data import), syncers (bidirectional sync), and triggers (automation)
+- **Behavior-Based Design**: Uses Elixir behaviors to define contracts for each integration type
+- **Registry System**: `LifeOrg.Integrations.Registry` GenServer manages registration and lookup of integrations
+- **Link Detection**: `LifeOrg.LinkDetector` extracts URLs from text content using regex patterns
+- **Decorator Pipeline**: `LifeOrg.Decorators.Pipeline` processes content asynchronously to inject link previews
+
+### Web Link Decorator (Phase 2 Complete)
+- **Generic Web Link Support**: Fetches Open Graph, Twitter Card, and standard HTML metadata
+- **Caching Layer**: `LifeOrg.LinkFetcher` GenServer provides HTTP fetching with MySQL-backed caching
+- **Rich Previews**: Displays title, description, domain, and images in clickable preview cards
+- **Real-time Processing**: LiveView triggers async processing when content contains URLs
+- **Error Handling**: Graceful fallbacks for failed requests, malformed HTML, or missing metadata
+
+### Key Implementation Details
+- **Module Loading**: Uses `Code.ensure_loaded!` to ensure integration modules are available during registration
+- **Safe HTML Handling**: Custom `safe_html_escape/1` function handles both raw strings and `{:safe, content}` tuples
+- **Prose CSS Override**: Uses `!important` inline styles to override Tailwind prose styling in previews
+- **Background Processing**: Uses Phoenix Tasks for async metadata fetching to avoid blocking UI
+- **String Slice Compatibility**: Updated to use new Elixir 1.18 syntax (`start..-1//1`)
+
 ## MCP Server Integration
 
 The application includes a **Model Context Protocol (MCP) server** that enables external AI tools (like Claude Desktop) to interact with the life organizer data.

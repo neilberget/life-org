@@ -138,7 +138,9 @@ defmodule LifeOrgWeb.Components.JournalComponent do
         </span>
       <% end %>
       <div class="text-gray-700 prose prose-sm max-w-none">
-        <%= render_markdown(@entry.content) %>
+        <div id={"journal-preview-#{@entry.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@entry.content)}>
+          <%= render_markdown(@entry.content) %>
+        </div>
       </div>
     </div>
     """

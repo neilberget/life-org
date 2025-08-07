@@ -196,6 +196,23 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_event("process_link_previews", %{"content" => content}, socket) do
+    try do
+      # Process content with link previews
+      processed_content = LifeOrg.Decorators.Pipeline.process_content_safe(
+        content,
+        socket.assigns.current_workspace.id,
+        %{enable_decorators: true, fetch_timeout: 3000}
+      )
+      
+      {:reply, %{processed_content: processed_content}, socket}
+    rescue
+      error ->
+        {:reply, %{error: "Processing failed: #{inspect(error)}"}, socket}
+    end
+  end
+
+  @impl true
   def handle_event("edit_journal_entry", %{"id" => id}, socket) do
     entry = Repo.get!(JournalEntry, String.to_integer(id))
     

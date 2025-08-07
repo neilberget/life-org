@@ -1,3 +1,4 @@
+- remove mood box from journals
 - Archive journal entries -- or better verb, but they get excluded from future context
 - Integrations. If i paste an asana link into a todo, should be smart
 - expand chat view

@@ -1,7 +1,7 @@
 defmodule LifeOrg.Workspace do
   use Ecto.Schema
   import Ecto.Changeset
-  alias LifeOrg.{JournalEntry, Todo, Conversation}
+  alias LifeOrg.{JournalEntry, Todo, Conversation, UserIntegration, ImportRun}
 
   schema "workspaces" do
     field :name, :string
@@ -12,6 +12,8 @@ defmodule LifeOrg.Workspace do
     has_many :journal_entries, JournalEntry
     has_many :todos, Todo
     has_many :conversations, Conversation
+    has_many :user_integrations, UserIntegration
+    has_many :import_runs, ImportRun
 
     timestamps(type: :utc_datetime)
   end
