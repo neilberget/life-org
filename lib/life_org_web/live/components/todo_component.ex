@@ -215,7 +215,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <div class="text-sm text-gray-600 mt-1">
-            <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+            <div id={"todo-list-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
+              <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+            </div>
           </div>
         <% end %>
         <div class="flex items-center gap-2 mt-2">
@@ -359,7 +361,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <div class="text-sm text-gray-600 mt-1">
-            <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+            <div id={"todo-list-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
+              <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+            </div>
           </div>
         <% end %>
         <div class="flex items-center gap-2 mt-2">
@@ -770,7 +774,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <div id={"todo-view-description-#{@todo.id}"} class="bg-gray-50 rounded-lg p-4 mb-6" phx-hook="InteractiveCheckboxes">
             <h3 class="text-lg font-semibold text-gray-800 mb-3">Description</h3>
             <div class="prose prose-sm prose-gray max-w-none">
-              <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+              <div id={"todo-description-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
+                <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+              </div>
             </div>
             <!-- Hidden trigger to force re-render when checkboxes change -->
             <span style="display: none;" id={"trigger-#{@todo.id}"}><%= Map.get(assigns, :checkbox_update_trigger, 0) %></span>
@@ -971,8 +977,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     # Transform checkboxes to be interactive
     interactive_html = make_checkboxes_interactive(html, todo_id)
 
-    # Return the interactive HTML directly for now
-    # Link previews will be handled separately
+    # Return the interactive HTML - link previews are handled by the LinkPreviewLoader hook
     interactive_html
   end
 

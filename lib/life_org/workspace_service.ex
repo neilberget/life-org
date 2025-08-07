@@ -93,6 +93,12 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   # Todo functions
+  def get_todo(id) do
+    Todo
+    |> Repo.get!(id)
+    |> Repo.preload(:journal_entry)
+  end
+
   def list_todos(workspace_id) do
     Todo
     |> where([t], t.workspace_id == ^workspace_id)
@@ -101,6 +107,7 @@ defmodule LifeOrg.WorkspaceService do
     |> select([t, c], %{t | comment_count: count(c.id)})
     |> order_by([t], [desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
     |> Repo.all()
+    |> Repo.preload(:journal_entry)
   end
 
   def create_todo(attrs, workspace_id) do
@@ -112,9 +119,12 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   def update_todo(%Todo{} = todo, attrs) do
-    todo
-    |> Todo.changeset(attrs)
-    |> Repo.update()
+    case todo
+         |> Todo.changeset(attrs)
+         |> Repo.update() do
+      {:ok, updated_todo} -> {:ok, Repo.preload(updated_todo, :journal_entry)}
+      error -> error
+    end
   end
 
   def delete_todo(%Todo{} = todo) do

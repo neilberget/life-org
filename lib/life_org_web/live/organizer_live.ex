@@ -168,7 +168,7 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("toggle_description_checkbox", params, socket) do
     %{"todo-id" => todo_id, "checkbox-index" => checkbox_index, "checked" => checked_str} = params
-    todo = Repo.get!(Todo, String.to_integer(todo_id)) |> Repo.preload(:journal_entry)
+    todo = WorkspaceService.get_todo(String.to_integer(todo_id))
 
     # checkbox_index might already be an integer from JavaScript
     checkbox_index =
@@ -309,7 +309,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("edit_todo", %{"id" => id}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(id))
+    todo = WorkspaceService.get_todo(String.to_integer(id))
 
     {:noreply,
      socket
@@ -319,7 +319,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("update_todo", %{"id" => id, "todo" => params}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(id))
+    todo = WorkspaceService.get_todo(String.to_integer(id))
 
     # Clean up empty strings for optional fields
     cleaned_params =
@@ -396,7 +396,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("confirm_delete_todo", %{"id" => id}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(id))
+    todo = WorkspaceService.get_todo(String.to_integer(id))
     {:ok, _} = WorkspaceService.delete_todo(todo)
 
     todos = Enum.reject(socket.assigns.todos, &(&1.id == String.to_integer(id)))
@@ -411,7 +411,7 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("delete_todo", %{"id" => id}, socket) do
     # Keep the old event handler for backward compatibility
-    todo = Repo.get!(Todo, String.to_integer(id))
+    todo = WorkspaceService.get_todo(String.to_integer(id))
     {:ok, _} = WorkspaceService.delete_todo(todo)
 
     todos = Enum.reject(socket.assigns.todos, &(&1.id == String.to_integer(id)))
@@ -747,7 +747,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("edit_todo_from_view", %{"id" => id}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(id))
+    todo = WorkspaceService.get_todo(String.to_integer(id))
 
     {:noreply,
      socket
@@ -759,7 +759,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("view_todo", %{"id" => id}, socket) do
-    todo = Repo.get!(Todo, String.to_integer(id)) |> Repo.preload(:journal_entry)
+    todo = WorkspaceService.get_todo(String.to_integer(id))
 
     comments =
       Repo.all(
