@@ -50,15 +50,19 @@ todo_comments:
    - Persistent conversation threads
    - Full conversation history sent to AI
    - Context-aware responses using journal entries
-   - AI can create and manage todos via tool calls
+   - AI can create, update, complete, and delete todos via tool calls
    - Web search capabilities for current information and resources
+   - Real-time UI synchronization when AI modifies data
 
 3. **Smart Todo Management**
    - Priority-based sorting with current todos at top
    - AI-generated todos from chat conversations
-   - Full editing capabilities
+   - Full editing capabilities including AI-driven CRUD operations
    - Due date tracking
    - Start/stop workflow to mark current work items
+   - Real-time UI updates when AI tools modify todos
+   - Individual todo routing (`/todo/:id`) with direct linking
+   - Copy-to-clipboard functionality for sharing todo links
 
 4. **Modern UI/UX**
    - Three-column responsive layout
@@ -346,9 +350,12 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Enhanced Context Priority**: For todos created from journal entries, AI receives the full originating journal entry plus recent entries for optimal contextual understanding
 - **Conversation Persistence**: Each todo can have multiple persistent chat conversations
 - **Tool Integration**: AI can directly modify todos (update fields, complete tasks, create related todos)
+- **Multi-Step Tool Execution**: AI can perform complex operations requiring multiple tool calls in sequence (e.g., fetch todo data, then update based on that data)
+- **Recursive Tool Processing**: The system recursively handles AI responses containing additional tools until a final text response is received
 - **Modal State Management**: Critical to use `push_event("show_modal")` after state changes to prevent modal closing
 - **Two-Column Layout**: Todo details (left) and chat interface (right) when chat is active
-- **Specialized Tools**: `create_related_todo`, `update_current_todo`, `complete_current_todo` for focused todo operations
+- **Specialized Tools**: `create_related_todo`, `update_current_todo`, `complete_current_todo`, `get_todo_by_id` for focused todo operations
+- **Flexible ID Support**: `get_todo_by_id` tool accepts both numeric IDs ("42") and full URLs ("http://localhost:4000/todo/42")
 - **Empty Response Handling**: Tool-only AI responses (no text) require special handling to avoid database validation errors
 
 ### Modal System Best Practices
@@ -370,6 +377,7 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Checkbox State Management**: JavaScript maintains `data-current-state` attributes to handle optimistic updates
 - **Event Handling**: Checkbox clicks use `preventDefault()` and `stopPropagation()` to prevent unwanted interactions
 - **AI Checkbox Support**: AI system prompts are configured to understand GitHub-style markdown checkboxes (`- [ ]`/`- [x]`) in todo descriptions, enabling creation of interactive subtask lists
+- **AI Tool UI Synchronization**: All AI tool actions (create, update, complete, delete) must update the LiveView assigns to trigger real-time UI updates - handled in three locations: general chat, journal extraction, and todo-specific chat
 
 ## Admin & Monitoring
 

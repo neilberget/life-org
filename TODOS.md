@@ -1,6 +1,9 @@
 - Archive journal entries -- or better verb, but they get excluded from future context
+- todos should be individually routable, tool to retrieve specific todo by id, icon to copy url for it,ff
 - Integrations. If i paste an asana link into a todo, should be smart
+- make sure process_link_previews cached results
 - expand chat view
 - generate embeddings for all journal entries and todos
 - then add search and do an vector comparision between query embedding and content
 - daily planner mode -- pulls it all together
+- I don't like the dual todo detail vs todo edit modals, should be single unified experience

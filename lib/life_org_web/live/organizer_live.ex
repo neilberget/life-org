@@ -15,7 +15,7 @@ defmodule LifeOrgWeb.OrganizerLive do
   alias LifeOrgWeb.Components.{JournalComponent, ChatComponent, TodoComponent}
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     # Get default workspace
     current_workspace = WorkspaceService.get_default_workspace()
     workspaces = WorkspaceService.list_workspaces()
@@ -24,6 +24,28 @@ defmodule LifeOrgWeb.OrganizerLive do
     journal_entries = WorkspaceService.list_journal_entries(current_workspace.id)
     todos = WorkspaceService.list_todos(current_workspace.id) |> sort_todos()
     conversations = WorkspaceService.list_conversations(current_workspace.id)
+
+    # Handle todo route parameter
+    {viewing_todo, todo_comments} =
+      case Map.get(params, "id") do
+        nil ->
+          {nil, []}
+
+        id ->
+          case WorkspaceService.get_todo(String.to_integer(id)) do
+            nil ->
+              {nil, []}
+
+            todo ->
+              comments =
+                Repo.all(
+                  from(c in TodoComment, where: c.todo_id == ^todo.id, order_by: [desc: c.inserted_at])
+                )
+                |> Repo.preload([])
+
+              {todo, comments}
+          end
+      end
 
     {:ok,
      socket
@@ -44,8 +66,8 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:show_ai_sidebar, false)
      |> assign(:ai_sidebar_view, :conversations)
      |> assign(:tag_filter, nil)
-     |> assign(:viewing_todo, nil)
-     |> assign(:todo_comments, [])
+     |> assign(:viewing_todo, viewing_todo)
+     |> assign(:todo_comments, todo_comments)
      |> assign(:show_comment_form, false)
      |> assign(:processing_journal_todos, false)
      |> assign(:comment_todo_id, nil)
@@ -56,7 +78,15 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:current_todo_conversation, nil)
      |> assign(:layout_expanded, nil)
      |> assign(:checkbox_update_trigger, 0)
-     |> assign(:deleting_todo_id, nil)}
+     |> assign(:deleting_todo_id, nil)
+     |> then(fn socket ->
+       # Show todo modal if viewing a specific todo
+       if viewing_todo do
+         push_event(socket, "show_modal", %{id: "view-todo-modal"})
+       else
+         socket
+       end
+     end)}
   end
 
   @impl true
@@ -534,7 +564,8 @@ defmodule LifeOrgWeb.OrganizerLive do
                message,
                socket.assigns.journal_entries,
                todos_for_ai,
-               conversation_history
+               conversation_history,
+               socket.assigns.current_workspace.id
              ) do
           {:ok, response, tool_actions} ->
             IO.puts("AI response received: #{inspect(response)}")
@@ -1047,7 +1078,8 @@ defmodule LifeOrgWeb.OrganizerLive do
                todo_comments,
                all_todos,
                socket.assigns.journal_entries,
-               conversation_history
+               conversation_history,
+               workspace_id
              ) do
           {:ok, response, tool_actions} ->
             IO.puts("Todo AI response received: #{inspect(response)}")
@@ -1140,23 +1172,42 @@ defmodule LifeOrgWeb.OrganizerLive do
         %{role: msg.role, content: msg.content}
       end)
 
-    # Execute tool actions
+    # Execute tool actions for UI updates (tools were already executed in AI handler)
     updated_todos =
       Enum.reduce(tool_actions, socket.assigns.todos, fn action, todos ->
-        case AIHandler.execute_tool_action(action, socket.assigns.current_workspace.id) do
-          {:ok, todo} when action.action == :create_todo ->
-            # Preload journal_entry for new todos
-            todo_with_journal = Repo.preload(todo, :journal_entry)
-            [todo_with_journal | todos] |> sort_todos()
-
-          {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
-            # Preload journal_entry for updated todos
-            todo_with_journal = Repo.preload(updated_todo, :journal_entry)
-            update_todo_in_list(todos, todo_with_journal)
-
-          {:ok, _deleted_todo} when action.action == :delete_todo ->
+        case action.action do
+          :create_todo ->
+            # Find the created todo by title (since it was already created in AI handler)
+            case Enum.find(WorkspaceService.list_todos(socket.assigns.current_workspace.id), fn todo ->
+              todo.title == action.title && todo.ai_generated
+            end) do
+              nil -> todos  # Todo not found, skip
+              todo ->
+                todo_with_journal = Repo.preload(todo, :journal_entry)
+                [todo_with_journal | todos] |> sort_todos()
+            end
+            
+          :update_todo ->
+            # Reload the updated todo
+            case Repo.get(Todo, action.id) do
+              nil -> todos
+              todo ->
+                todo_with_journal = Repo.preload(todo, :journal_entry)
+                update_todo_in_list(todos, todo_with_journal)
+            end
+            
+          :complete_todo ->
+            # Reload the completed todo
+            case Repo.get(Todo, action.id) do
+              nil -> todos
+              todo ->
+                todo_with_journal = Repo.preload(todo, :journal_entry)
+                update_todo_in_list(todos, todo_with_journal)
+            end
+            
+          :delete_todo ->
             remove_todo_from_list(todos, action.id)
-
+            
           _ ->
             todos
         end
@@ -1229,16 +1280,14 @@ defmodule LifeOrgWeb.OrganizerLive do
       |> assign(:processing_message, false)
       |> push_event("show_modal", %{id: "view-todo-modal"})
 
-    # Execute any tool actions for todo operations
-    socket =
-      if length(tool_actions) > 0 do
-        IO.puts("Executing #{length(tool_actions)} todo tool actions...")
-        execute_todo_tool_actions(socket, tool_actions, todo_id)
-      else
-        socket
-      end
-
-    {:noreply, socket}
+    # Execute tool actions for UI updates (tools were already executed in AI handler)
+    if length(tool_actions) > 0 do
+      IO.puts("Updating UI for #{length(tool_actions)} todo tool actions...")
+      updated_socket = execute_todo_tool_actions_for_ui(socket, tool_actions, todo_id)
+      {:noreply, updated_socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -1397,27 +1446,11 @@ defmodule LifeOrgWeb.OrganizerLive do
     |> Enum.sort()
   end
 
-  defp execute_todo_tool_actions(socket, tool_actions, _todo_id) do
-    updated_todos =
-      Enum.reduce(tool_actions, socket.assigns.todos, fn action, todos ->
-        case AIHandler.execute_tool_action(action, socket.assigns.current_workspace.id) do
-          {:ok, todo} when action.action == :create_todo ->
-            # Preload journal_entry for new todos
-            todo_with_journal = Repo.preload(todo, :journal_entry)
-            [todo_with_journal | todos] |> sort_todos()
 
-          {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
-            # Preload journal_entry for updated todos
-            todo_with_journal = Repo.preload(updated_todo, :journal_entry)
-            update_todo_in_list(todos, todo_with_journal)
-
-          {:ok, _deleted_todo} when action.action == :delete_todo ->
-            remove_todo_from_list(todos, action.id)
-
-          _ ->
-            todos
-        end
-      end)
+  # Simple UI update function for todo tool actions  
+  defp execute_todo_tool_actions_for_ui(socket, _tool_actions, _todo_id) do
+    # Reload todos from database since tools were already executed in AI handler
+    updated_todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
 
     # Update the viewing_todo if it was modified, or clear it if it was deleted
     {viewing_todo, socket_with_events} =

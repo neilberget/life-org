@@ -1,7 +1,8 @@
 defmodule LifeOrg.AIHandler do
+  import Ecto.Query
   alias LifeOrg.{AnthropicClient, Repo, Todo, WorkspaceService}
 
-  def process_message(message, journal_entries, todos, conversation_history \\ []) do
+  def process_message(message, journal_entries, todos, conversation_history \\ [], workspace_id) do
     IO.puts("Building system prompt...")
     system_prompt = build_system_prompt(journal_entries, todos)
     IO.puts("System prompt built: #{String.length(system_prompt)} characters")
@@ -23,10 +24,13 @@ defmodule LifeOrg.AIHandler do
         assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
         tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
         
-        # Convert tool uses to our action format
-        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, todos))
-        
-        {:ok, assistant_message, tool_actions}
+        # If there are tool uses, execute them and get final response
+        if length(tool_uses) > 0 do
+          execute_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id)
+        else
+          # No tools used, return the response directly
+          {:ok, assistant_message, []}
+        end
         
       {:error, error} ->
         IO.puts("API error: #{inspect(error)}")
@@ -263,6 +267,20 @@ defmodule LifeOrg.AIHandler do
           },
           "required" => ["id"]
         }
+      },
+      %{
+        "name" => "get_todo_by_id",
+        "description" => "Get details of a specific todo by ID or URL",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "id_or_url" => %{
+              "type" => "string",
+              "description" => "Either a numeric todo ID (e.g., '42') or a todo URL (e.g., 'http://localhost:4000/todo/42')"
+            }
+          },
+          "required" => ["id_or_url"]
+        }
       }
     ]
   end
@@ -303,6 +321,12 @@ defmodule LifeOrg.AIHandler do
           action: :delete_todo,
           id: tool_use.input["id"]
         }
+        
+      "get_todo_by_id" ->
+        %{
+          action: :get_todo_by_id,
+          id_or_url: tool_use.input["id_or_url"]
+        }
     end
   end
   
@@ -338,7 +362,8 @@ defmodule LifeOrg.AIHandler do
   
   def execute_tool_action(%{action: :update_todo, id: id, updates: updates}, _workspace_id) do
     case Repo.get(Todo, id) do
-      nil -> {:error, "Todo not found"}
+      nil -> 
+        {:error, "Todo not found"}
       todo ->
         WorkspaceService.update_todo(todo, updates)
     end
@@ -360,7 +385,37 @@ defmodule LifeOrg.AIHandler do
     end
   end
 
-  def process_todo_message(message, todo, todo_comments, all_todos, journal_entries, conversation_history \\ []) do
+  def execute_tool_action(%{action: :get_todo_by_id, id_or_url: id_or_url}, workspace_id) do
+    # Parse ID from either a direct ID or URL
+    case parse_todo_id(id_or_url) do
+      {:ok, todo_id} -> 
+        get_todo_by_parsed_id(todo_id, workspace_id)
+      {:error, reason} -> 
+        {:error, reason}
+    end
+  end
+
+  defp get_todo_by_parsed_id(todo_id, workspace_id) do
+    case Repo.get(Todo, todo_id) do
+      nil -> 
+        {:error, "Todo not found with ID: #{todo_id}"}
+      todo ->
+        # Verify todo belongs to workspace
+        if todo.workspace_id == workspace_id do
+          # Load comments for full details
+          comments = Repo.all(
+            from c in LifeOrg.TodoComment,
+            where: c.todo_id == ^todo_id,
+            order_by: [asc: c.inserted_at]
+          )
+          {:ok, format_todo_for_ai(todo, comments)}
+        else
+          {:error, "Todo not found in current workspace"}
+        end
+    end
+  end
+
+  def process_todo_message(message, todo, todo_comments, all_todos, journal_entries, conversation_history \\ [], workspace_id) do
     IO.puts("Building todo-specific system prompt...")
     system_prompt = build_todo_system_prompt(todo, todo_comments, all_todos, journal_entries)
     IO.puts("Todo system prompt built: #{String.length(system_prompt)} characters")
@@ -377,15 +432,26 @@ defmodule LifeOrg.AIHandler do
       {:ok, response} ->
         IO.puts("Got response from API: #{inspect(response)}")
         content_blocks = AnthropicClient.extract_content_from_response(response)
-        
         # Extract text message and tool uses separately
         assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+        
         tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
         
-        # Convert tool uses to our action format for todo operations
-        tool_actions = Enum.map(tool_uses, &convert_todo_tool_use_to_action(&1, todo, all_todos))
-        
-        {:ok, assistant_message, tool_actions}
+        # If there are tool uses, execute them and get final response
+        if length(tool_uses) > 0 do
+          IO.puts("Found #{length(tool_uses)} tool uses, executing...")
+          try do
+            execute_todo_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, todo, all_todos)
+          rescue
+            error ->
+              IO.puts("Error in execute_todo_tools_and_continue: #{inspect(error)}")
+              IO.puts("Stacktrace: #{Exception.format_stacktrace(__STACKTRACE__)}")
+              {:error, "Tool execution failed: #{inspect(error)}"}
+          end
+        else
+          # No tools used, return the response directly
+          {:ok, assistant_message, []}
+        end
         
       {:error, error} ->
         IO.puts("API error: #{inspect(error)}")
@@ -672,12 +738,27 @@ defmodule LifeOrg.AIHandler do
           },
           "required" => []
         }
+      },
+      %{
+        "name" => "get_todo_by_id",
+        "description" => "Get details of a specific todo by ID or URL",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "id_or_url" => %{
+              "type" => "string",
+              "description" => "Either a numeric todo ID (e.g., '42') or a todo URL (e.g., 'http://localhost:4000/todo/42')"
+            }
+          },
+          "required" => ["id_or_url"]
+        }
       }
     ]
   end
 
   defp convert_todo_tool_use_to_action(tool_use, current_todo, _all_todos) do
-    case tool_use.name do
+    
+    result = case tool_use.name do
       "create_related_todo" ->
         %{
           action: :create_todo,
@@ -695,6 +776,7 @@ defmodule LifeOrg.AIHandler do
         |> maybe_add("tags", tool_use.input["tags"])
         |> maybe_add("due_date", tool_use.input["due_date"])
         
+        
         %{
           action: :update_todo,
           id: current_todo.id,
@@ -707,6 +789,188 @@ defmodule LifeOrg.AIHandler do
           id: current_todo.id,
           completion_note: tool_use.input["completion_note"]
         }
+        
+      "get_todo_by_id" ->
+        %{
+          action: :get_todo_by_id,
+          id_or_url: tool_use.input["id_or_url"]
+        }
+    end
+    
+    result
+  end
+
+  defp execute_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id) do
+    IO.puts("Executing #{length(tool_uses)} tools...")
+    
+    # Execute each tool and collect results
+    tool_results = Enum.map(tool_uses, fn tool_use ->
+      IO.puts("Executing tool: #{tool_use.name}")
+      
+      # Convert to action and execute
+      action = convert_tool_use_to_action(tool_use, [], nil)
+      result = case execute_tool_action(action, workspace_id) do
+        {:ok, result_data} when is_binary(result_data) ->
+          result_data
+        {:ok, _} ->
+          "Tool executed successfully"
+        {:error, error} ->
+          "Error: #{error}"
+      end
+      
+      # Build tool result message
+      AnthropicClient.build_tool_result_message(tool_use.id, result)
+    end)
+    
+    # Add assistant message (with tool calls) to conversation
+    assistant_message_with_tools = %{
+      role: "assistant", 
+      content: content_blocks
+    }
+    
+    # Continue conversation with tool results
+    updated_messages = messages ++ [assistant_message_with_tools] ++ tool_results
+    
+    IO.puts("Sending tool results back to API...")
+    case AnthropicClient.send_message(updated_messages, system_prompt, tools) do
+      {:ok, final_response} ->
+        IO.puts("Got final response from API")
+        final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
+        final_message = AnthropicClient.extract_text_from_content(final_content_blocks)
+        
+        # Convert tool actions for UI updates (no tool IDs needed for this)
+        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, []))
+        
+        {:ok, final_message, tool_actions}
+        
+      {:error, error} ->
+        IO.puts("Error getting final response: #{inspect(error)}")
+        {:error, "Sorry, I encountered an error processing the tool results: #{error}"}
+    end
+  end
+
+  defp execute_todo_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, todo, all_todos) do
+    # Execute each tool and collect results
+    tool_results = Enum.map(tool_uses, fn tool_use ->
+      # Convert to action and execute
+      action = convert_todo_tool_use_to_action(tool_use, todo, all_todos)
+      
+      result = case execute_tool_action(action, workspace_id) do
+        {:ok, result_data} when is_binary(result_data) ->
+          result_data
+        {:ok, _result_data} ->
+          "Tool executed successfully"
+        {:error, error} ->
+          "Error: #{error}"
+      end
+      
+      # Build tool result message
+      AnthropicClient.build_tool_result_message(tool_use.id, result)
+    end)
+    
+    # Add assistant message (with tool calls) to conversation
+    assistant_message_with_tools = %{
+      role: "assistant", 
+      content: content_blocks
+    }
+    
+    # Continue conversation with tool results
+    updated_messages = messages ++ [assistant_message_with_tools] ++ tool_results
+    
+    case AnthropicClient.send_message(updated_messages, system_prompt, tools) do
+      {:ok, final_response} ->
+        final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
+        
+        # Check if the final response contains more tools to execute
+        final_tool_uses = AnthropicClient.extract_tool_uses_from_content(final_content_blocks)
+        
+        if length(final_tool_uses) > 0 do
+          # Recursively handle additional tools
+          execute_todo_tools_and_continue(updated_messages, system_prompt, tools, final_content_blocks, final_tool_uses, workspace_id, todo, all_todos)
+        else
+          # No more tools, extract final message
+          final_message = AnthropicClient.extract_text_from_content(final_content_blocks)
+          
+          # Convert tool actions for UI updates (no tool IDs needed for this)
+          tool_actions = Enum.map(tool_uses, &convert_todo_tool_use_to_action(&1, todo, all_todos))
+          
+          {:ok, final_message, tool_actions}
+        end
+        
+      {:error, error} ->
+        {:error, "Sorry, I encountered an error processing the tool results: #{error}"}
+    end
+  end
+
+  defp parse_todo_id(id_or_url) do
+    cond do
+      # Check if it's a direct integer ID
+      Regex.match?(~r/^\d+$/, String.trim(id_or_url)) ->
+        case Integer.parse(String.trim(id_or_url)) do
+          {id, ""} -> {:ok, id}
+          _ -> {:error, "Invalid todo ID format"}
+        end
+        
+      # Check if it's a URL pattern like http://localhost:4000/todo/42
+      Regex.match?(~r/\/todo\/(\d+)/, id_or_url) ->
+        case Regex.run(~r/\/todo\/(\d+)/, id_or_url) do
+          [_, id_str] ->
+            case Integer.parse(id_str) do
+              {id, ""} -> {:ok, id}
+              _ -> {:error, "Invalid todo ID in URL"}
+            end
+          _ -> {:error, "Could not extract todo ID from URL"}
+        end
+        
+      true ->
+        {:error, "Invalid format. Expected either a numeric ID (e.g., '42') or a todo URL (e.g., 'http://localhost:4000/todo/42')"}
+    end
+  end
+
+  defp format_todo_for_ai(todo, comments) do
+    due_info = case {todo.due_date, todo.due_time} do
+      {nil, _} -> ""
+      {date, nil} -> " | Due: #{date}"
+      {date, time} -> " | Due: #{date} at #{time}"
+    end
+    
+    status = if todo.completed, do: "✓ COMPLETED", else: "○ PENDING"
+    priority = String.upcase(todo.priority || "medium")
+    
+    tags_info = case todo.tags do
+      nil -> ""
+      [] -> ""
+      tags -> " | Tags: " <> Enum.join(tags, ", ")
+    end
+    
+    description = if todo.description && String.trim(todo.description) != "" do
+      "\nDescription: #{todo.description}"
+    else
+      ""
+    end
+
+    comments_section = format_todo_comments_for_ai(comments)
+    
+    """
+    Todo Details:
+    ID: #{todo.id} | #{status} | Priority: #{priority} | Title: #{todo.title}#{due_info}#{tags_info}#{description}
+    
+    Created: #{Calendar.strftime(todo.inserted_at, "%B %d, %Y at %I:%M %p")}
+    Last Updated: #{Calendar.strftime(todo.updated_at, "%B %d, %Y at %I:%M %p")}
+
+    #{comments_section}
+    """
+  end
+
+  defp format_todo_comments_for_ai(comments) do
+    case comments do
+      [] -> "Comments: No comments yet on this todo."
+      _ ->
+        formatted_comments = Enum.map_join(comments, "\n\n", fn comment ->
+          date = Calendar.strftime(comment.inserted_at, "%B %d, %Y at %I:%M %p")
+          "#{date}: #{comment.content}"
+        end)
+        "Comments:\n#{formatted_comments}"
     end
   end
 end

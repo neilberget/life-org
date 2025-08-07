@@ -18,6 +18,7 @@ defmodule LifeOrgWeb.Router do
     pipe_through :browser
 
     live "/", OrganizerLive
+    live "/todo/:id", OrganizerLive
     live "/journal/:id", JournalEntryLive
     
     # Integration settings

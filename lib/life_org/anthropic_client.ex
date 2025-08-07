@@ -75,9 +75,20 @@ defmodule LifeOrg.AnthropicClient do
   
   defp format_messages(messages) do
     Enum.map(messages, fn msg ->
+      # Handle both atom keys and string keys
+      role = case msg do
+        %{role: role} -> to_string(role)
+        %{"role" => role} -> role
+      end
+      
+      content = case msg do
+        %{content: content} -> content
+        %{"content" => content} -> content
+      end
+      
       %{
-        "role" => to_string(msg.role),
-        "content" => msg.content
+        "role" => role,
+        "content" => content
       }
     end)
   end
