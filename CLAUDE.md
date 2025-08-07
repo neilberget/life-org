@@ -369,6 +369,7 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Interactive Checkboxes**: Use `push_event("show_modal")` after checkbox updates to prevent modal from closing
 - **Checkbox State Management**: JavaScript maintains `data-current-state` attributes to handle optimistic updates
 - **Event Handling**: Checkbox clicks use `preventDefault()` and `stopPropagation()` to prevent unwanted interactions
+- **AI Checkbox Support**: AI system prompts are configured to understand GitHub-style markdown checkboxes (`- [ ]`/`- [x]`) in todo descriptions, enabling creation of interactive subtask lists
 
 ## Database Constraints & Cascading Deletes
 - **Foreign Key Design**: All related entities use `on_delete: :delete_all` for proper cascading
