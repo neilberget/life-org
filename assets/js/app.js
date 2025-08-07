@@ -208,16 +208,20 @@ Hooks.LinkPreviewLoader = {
     // Mark as processed to avoid reprocessing
     this.el.setAttribute('data-processed', 'true')
     
+    // Store the current HTML (with interactive checkboxes) as a fallback
+    const currentHTML = this.el.innerHTML
+    
     // Show loading state
     this.el.innerHTML = this.getLoadingHTML()
     
-    // Process content with link previews
-    this.pushEvent("process_link_previews", {content: content}, (reply) => {
+    // Process content with link previews, sending current HTML instead of raw content
+    this.pushEvent("process_link_previews", {content: content, html: currentHTML}, (reply) => {
       if (reply.processed_content) {
         this.el.innerHTML = reply.processed_content
       } else if (reply.error) {
         console.warn("Link preview processing failed:", reply.error)
-        this.el.innerHTML = content
+        // Use the current HTML (with checkboxes) as fallback instead of raw content
+        this.el.innerHTML = currentHTML
       }
     })
   },

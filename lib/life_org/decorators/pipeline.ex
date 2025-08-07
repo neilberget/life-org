@@ -37,6 +37,14 @@ defmodule LifeOrg.Decorators.Pipeline do
     end)
   end
 
+  defp process_html(html, original_content, workspace_id, opts) do
+    if should_process_content?(original_content, opts) do
+      do_process_html(html, original_content, workspace_id, opts)
+    else
+      html
+    end
+  end
+
   ## Private Functions
 
   defp should_process_content?(content, opts) do
@@ -73,6 +81,30 @@ defmodule LifeOrg.Decorators.Pipeline do
     end
   end
 
+  defp do_process_html(html, original_content, workspace_id, opts) do
+    Logger.debug("Processing HTML for decorators while preserving existing elements")
+    
+    # Set workspace context for OAuth2 token access
+    if workspace_id do
+      Process.put(:current_workspace_id, workspace_id)
+    end
+    
+    # Extract URLs from original content (not HTML)
+    urls = LinkDetector.extract_urls(original_content)
+    
+    if Enum.empty?(urls) do
+      html
+    else
+      # Process URLs and inject previews into existing HTML
+      result = process_urls_and_inject_html(html, urls, workspace_id, opts)
+      
+      # Clean up process context
+      Process.delete(:current_workspace_id)
+      
+      result
+    end
+  end
+
   defp process_urls_and_inject(content, urls, workspace_id, opts) do
     # Group URLs by decorator to batch process them
     url_decorator_pairs = 
@@ -92,6 +124,28 @@ defmodule LifeOrg.Decorators.Pipeline do
       
       # Inject previews into content
       inject_previews(content, metadata_results, opts)
+    end
+  end
+
+  defp process_urls_and_inject_html(html, urls, workspace_id, opts) do
+    # Group URLs by decorator to batch process them
+    url_decorator_pairs = 
+      urls
+      |> Enum.map(fn url_info ->
+        decorators = Registry.get_decorators_for_url(url_info.url)
+        {url_info, List.first(decorators)}  # Use highest priority decorator
+      end)
+      |> Enum.filter(fn {_url_info, decorator} -> decorator != nil end)
+
+    if Enum.empty?(url_decorator_pairs) do
+      Logger.debug("No decorators found for URLs")
+      html
+    else
+      # Fetch metadata for all URLs
+      metadata_results = fetch_metadata_batch(url_decorator_pairs, workspace_id, opts)
+      
+      # Inject previews into HTML by appending to the end
+      inject_previews_html(html, metadata_results, opts)
     end
   end
 
@@ -143,6 +197,33 @@ defmodule LifeOrg.Decorators.Pipeline do
     end)
   end
 
+  defp inject_previews_html(html, metadata_results, _opts) do
+    # For HTML processing, append all previews at the end to preserve existing structure
+    preview_htmls = 
+      metadata_results
+      |> Enum.filter(& &1.preview_html)
+      |> Enum.map(&safe_html_to_string/1)
+      |> Enum.join("\n")
+    
+    if preview_htmls != "" do
+      html <> "\n" <> preview_htmls
+    else
+      html
+    end
+  end
+
+  defp safe_html_to_string(%{preview_html: {:safe, content}}), do: content
+  defp safe_html_to_string(%{preview_html: content}) when is_binary(content), do: content
+  defp safe_html_to_string(%{preview_html: nil}), do: ""
+  defp safe_html_to_string(result) when is_map(result) do
+    case Map.get(result, :preview_html) do
+      {:safe, content} -> content
+      content when is_binary(content) -> content
+      nil -> ""
+      other -> to_string(other)
+    end
+  end
+
   defp inject_single_preview(content, %{url_info: url_info, preview_html: preview_html}) do
     # Find the end of the line containing the URL
     line_end_pos = find_line_end(content, url_info.end_pos)
@@ -180,6 +261,24 @@ defmodule LifeOrg.Decorators.Pipeline do
       :exit, reason ->
         Logger.error("Content processing exited: #{inspect(reason)}")
         content
+    end
+  end
+
+  @doc """
+  Processes existing HTML by detecting URLs in the original content and injecting link previews
+  while preserving existing HTML elements (like interactive checkboxes).
+  """
+  def process_html_safe(html, original_content, workspace_id \\ nil, opts \\ %{}) do
+    try do
+      process_html(html, original_content, workspace_id, opts)
+    rescue
+      error ->
+        Logger.error("HTML processing failed: #{inspect(error)}")
+        html
+    catch
+      :exit, reason ->
+        Logger.error("HTML processing exited: #{inspect(reason)}")
+        html
     end
   end
 

@@ -216,6 +216,24 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_event("process_link_previews", %{"content" => content, "html" => html}, socket) do
+    try do
+      # Process using existing HTML with interactive checkboxes instead of raw content
+      processed_content =
+        LifeOrg.Decorators.Pipeline.process_html_safe(
+          html,
+          content,
+          socket.assigns.current_workspace.id,
+          %{enable_decorators: true, fetch_timeout: 3000}
+        )
+      {:reply, %{processed_content: processed_content}, socket}
+    rescue
+      error ->
+        {:reply, %{error: "Processing failed: #{inspect(error)}"}, socket}
+    end
+  end
+
+  # Fallback for clients that don't send HTML (backwards compatibility)
   def handle_event("process_link_previews", %{"content" => content}, socket) do
     try do
       # Process content with link previews
