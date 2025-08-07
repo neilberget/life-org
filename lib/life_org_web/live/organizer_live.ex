@@ -559,6 +559,9 @@ defmodule LifeOrgWeb.OrganizerLive do
     {:noreply, 
      socket
      |> assign(:tag_filter, filter)
+     |> assign(:viewing_todo, nil)
+     |> assign(:editing_todo, nil)
+     |> assign(:adding_todo, false)
      |> push_event("hide_dropdown", %{id: "tag-dropdown"})}
   end
 

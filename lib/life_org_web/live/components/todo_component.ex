@@ -232,9 +232,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <%= if @todo.tags && length(@todo.tags) > 0 do %>
             <div class="flex flex-wrap gap-1">
               <%= for tag <- @todo.tags do %>
-                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                <button
+                  phx-click="filter_by_tag"
+                  phx-value-tag={tag}
+                  class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors cursor-pointer"
+                  title={"Filter by ##{tag}"}
+                >
                   #<%= tag %>
-                </span>
+                </button>
               <% end %>
             </div>
           <% end %>
@@ -322,9 +327,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <%= if @todo.tags && length(@todo.tags) > 0 do %>
             <div class="flex flex-wrap gap-1">
               <%= for tag <- @todo.tags do %>
-                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                <button
+                  phx-click="filter_by_tag"
+                  phx-value-tag={tag}
+                  class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors cursor-pointer"
+                  title={"Filter by ##{tag}"}
+                >
                   #<%= tag %>
-                </span>
+                </button>
               <% end %>
             </div>
           <% end %>
@@ -681,9 +691,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         <%= if @todo.tags && length(@todo.tags) > 0 do %>
           <div class="flex flex-wrap gap-2 mb-6">
             <%= for tag <- @todo.tags do %>
-              <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+              <button
+                phx-click="filter_by_tag"
+                phx-value-tag={tag}
+                class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm hover:bg-blue-200 transition-colors cursor-pointer"
+                title={"Filter by ##{tag}"}
+              >
                 #<%= tag %>
-              </span>
+              </button>
             <% end %>
           </div>
         <% end %>
