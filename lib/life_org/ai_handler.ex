@@ -146,7 +146,7 @@ defmodule LifeOrg.AIHandler do
     #{tags_context}
     
     You have access to tools for managing todos and web search capabilities. Use these tools when:
-    - The user asks you to create, update, or complete tasks
+    - The user asks you to create, update, complete, or delete tasks
     - You need current information from the internet to provide helpful advice or context
     - The user asks questions that require up-to-date information beyond your knowledge cutoff
     
@@ -169,9 +169,6 @@ defmodule LifeOrg.AIHandler do
   defp build_tools_definition(todos) do
     # Get existing tags for the enum values
     existing_tags = get_unique_tags(todos)
-    
-    # Build todo IDs list for update/complete tools
-    todo_ids = Enum.map(todos, & &1.id)
     
     [
       %{
@@ -215,7 +212,7 @@ defmodule LifeOrg.AIHandler do
           "properties" => %{
             "id" => %{
               "type" => "integer",
-              "description" => "The ID of the todo to update. Available IDs: #{Enum.join(todo_ids, ", ")}"
+              "description" => "The ID of the todo to update"
             },
             "title" => %{
               "type" => "string",
@@ -247,7 +244,21 @@ defmodule LifeOrg.AIHandler do
           "properties" => %{
             "id" => %{
               "type" => "integer",
-              "description" => "The ID of the todo to complete. Available IDs: #{Enum.join(todo_ids, ", ")}"
+              "description" => "The ID of the todo to complete"
+            }
+          },
+          "required" => ["id"]
+        }
+      },
+      %{
+        "name" => "delete_todo",
+        "description" => "Delete a todo permanently",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "id" => %{
+              "type" => "integer",
+              "description" => "The ID of the todo to delete"
             }
           },
           "required" => ["id"]
@@ -284,6 +295,12 @@ defmodule LifeOrg.AIHandler do
       "complete_todo" ->
         %{
           action: :complete_todo,
+          id: tool_use.input["id"]
+        }
+        
+      "delete_todo" ->
+        %{
+          action: :delete_todo,
           id: tool_use.input["id"]
         }
     end
@@ -332,6 +349,14 @@ defmodule LifeOrg.AIHandler do
       nil -> {:error, "Todo not found"}
       todo ->
         WorkspaceService.update_todo(todo, %{"completed" => true})
+    end
+  end
+  
+  def execute_tool_action(%{action: :delete_todo, id: id}, _workspace_id) do
+    case Repo.get(Todo, id) do
+      nil -> {:error, "Todo not found"}
+      todo ->
+        WorkspaceService.delete_todo(todo)
     end
   end
 

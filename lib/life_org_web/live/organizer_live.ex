@@ -1149,10 +1149,13 @@ defmodule LifeOrgWeb.OrganizerLive do
             todo_with_journal = Repo.preload(todo, :journal_entry)
             [todo_with_journal | todos] |> sort_todos()
 
-          {:ok, updated_todo} when action.action == :complete_todo ->
+          {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
             # Preload journal_entry for updated todos
             todo_with_journal = Repo.preload(updated_todo, :journal_entry)
             update_todo_in_list(todos, todo_with_journal)
+
+          {:ok, _deleted_todo} when action.action == :delete_todo ->
+            remove_todo_from_list(todos, action.id)
 
           _ ->
             todos
@@ -1273,6 +1276,10 @@ defmodule LifeOrgWeb.OrganizerLive do
               updated_todos_list = update_todo_in_list(todos_acc, todo_with_journal)
               {new_acc, updated_todos_list}
 
+            {:ok, _deleted_todo} when action.action == :delete_todo ->
+              updated_todos_list = remove_todo_from_list(todos_acc, action.id)
+              {new_acc, updated_todos_list}
+
             _ ->
               {new_acc, todos_acc}
           end
@@ -1320,6 +1327,11 @@ defmodule LifeOrgWeb.OrganizerLive do
       if t.id == updated_todo.id, do: updated_todo, else: t
     end)
     |> sort_todos()
+  end
+
+  defp remove_todo_from_list(todos, todo_id) do
+    todos
+    |> Enum.reject(fn t -> t.id == todo_id end)
   end
 
   defp sort_todos(todos) do
@@ -1399,22 +1411,28 @@ defmodule LifeOrgWeb.OrganizerLive do
             todo_with_journal = Repo.preload(updated_todo, :journal_entry)
             update_todo_in_list(todos, todo_with_journal)
 
+          {:ok, _deleted_todo} when action.action == :delete_todo ->
+            remove_todo_from_list(todos, action.id)
+
           _ ->
             todos
         end
       end)
 
-    # Update the viewing_todo if it was modified
-    viewing_todo =
+    # Update the viewing_todo if it was modified, or clear it if it was deleted
+    {viewing_todo, socket_with_events} =
       case socket.assigns[:viewing_todo] do
         nil ->
-          nil
+          {nil, socket}
 
         current_todo ->
           # Find the updated todo and ensure it has journal_entry preloaded
           case Enum.find(updated_todos, fn todo -> todo.id == current_todo.id end) do
-            nil -> current_todo
-            found_todo -> Repo.preload(found_todo, :journal_entry)
+            nil ->
+              # Todo was deleted, close the modal
+              {nil, push_event(socket, "hide_modal", %{id: "view-todo-modal"})}
+            found_todo ->
+              {Repo.preload(found_todo, :journal_entry), socket}
           end
       end
 
@@ -1426,7 +1444,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         socket.assigns[:todo_conversations] || []
       end
 
-    socket
+    socket_with_events
     |> assign(:todos, updated_todos)
     |> assign(:viewing_todo, viewing_todo)
     |> assign(:todo_conversations, conversations)
