@@ -26,7 +26,7 @@ journal_entries:
 - has_many :todos (reverse reference for todo creation context)
 
 todos:
-- id, title, description, completed, priority, due_date, due_time, ai_generated, tags (JSON), workspace_id, journal_entry_id (nullable), timestamps
+- id, title, description, completed, priority, due_date, due_time, ai_generated, current, tags (JSON), workspace_id, journal_entry_id (nullable), timestamps
 - belongs_to :journal_entry (tracks originating journal entry for AI-created todos)
 
 conversations:
@@ -54,10 +54,11 @@ todo_comments:
    - Web search capabilities for current information and resources
 
 3. **Smart Todo Management**
-   - Priority-based sorting
+   - Priority-based sorting with current todos at top
    - AI-generated todos from chat conversations
    - Full editing capabilities
    - Due date tracking
+   - Start/stop workflow to mark current work items
 
 4. **Modern UI/UX**
    - Three-column responsive layout

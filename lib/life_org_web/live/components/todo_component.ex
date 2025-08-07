@@ -261,7 +261,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
   def todo_item(assigns) do
     ~H"""
-    <div class="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg group">
+    <div class={"flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg group #{if @todo.current, do: "bg-green-50 border-l-4 border-green-500", else: ""}"}>
       <input
         type="checkbox"
         checked={@todo.completed}
@@ -279,6 +279,29 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             <%= @todo.title %>
           </h4>
           <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <%= if @todo.current do %>
+              <button
+                phx-click="stop_todo"
+                phx-value-id={@todo.id}
+                class="text-orange-500 hover:text-orange-700"
+                title="Stop working on this"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+              </button>
+            <% else %>
+              <button
+                phx-click="start_todo"
+                phx-value-id={@todo.id}
+                class="text-green-500 hover:text-green-700"
+                title="Start working on this"
+              >
+                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                </svg>
+              </button>
+            <% end %>
             <button
               phx-click="edit_todo"
               phx-value-id={@todo.id}

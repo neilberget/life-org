@@ -350,6 +350,24 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_event("start_todo", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, id)
+    {:ok, updated_todo} = WorkspaceService.update_todo(todo, %{current: true})
+    
+    todos = update_todo_in_list(socket.assigns.todos, updated_todo)
+    {:noreply, assign(socket, :todos, todos)}
+  end
+
+  @impl true
+  def handle_event("stop_todo", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, id)
+    {:ok, updated_todo} = WorkspaceService.update_todo(todo, %{current: false})
+    
+    todos = update_todo_in_list(socket.assigns.todos, updated_todo)
+    {:noreply, assign(socket, :todos, todos)}
+  end
+
+  @impl true
   def handle_event("send_chat_message", %{"message" => message}, socket) do
     # Get or create conversation with workspace support
     {:ok, conversation} = case socket.assigns.current_conversation do
@@ -1056,7 +1074,8 @@ defmodule LifeOrgWeb.OrganizerLive do
         {date, time} -> NaiveDateTime.new!(date, time)
       end
       
-      {todo.completed, priority_order, due_datetime, todo.inserted_at}
+      # Sort by: completed status, then current status (current first), then priority, then due date, then insertion date
+      {todo.completed, !todo.current, priority_order, due_datetime, todo.inserted_at}
     end)
   end
   
