@@ -156,7 +156,10 @@ defmodule LifeOrg.AIHandler do
     
     #{tags_context}
     
-    You have access to tools for managing todos. Use them when the user asks you to create, update, or complete tasks.
+    You have access to tools for managing todos and web search capabilities. Use these tools when:
+    - The user asks you to create, update, or complete tasks
+    - You need current information from the internet to provide helpful advice or context
+    - The user asks questions that require up-to-date information beyond your knowledge cutoff
     
     When creating todos, please suggest appropriate tags based on:
     - Existing tags that are relevant to the new task
@@ -165,7 +168,7 @@ defmodule LifeOrg.AIHandler do
     
     Use existing tags when possible to maintain consistency, but feel free to suggest new tags when appropriate.
     
-    Be supportive, empathetic, and help the user organize their thoughts and tasks based on their journal entries.
+    Be supportive, empathetic, and help the user organize their thoughts and tasks based on their journal entries. Use web search to provide current, relevant information when it would be helpful for their goals and tasks.
     """
   end
   
@@ -177,6 +180,11 @@ defmodule LifeOrg.AIHandler do
     todo_ids = Enum.map(todos, & &1.id)
     
     [
+      %{
+        "type" => "web_search_20250305",
+        "name" => "web_search",
+        "max_uses" => 5
+      },
       %{
         "name" => "create_todo",
         "description" => "Create a new todo item",
@@ -411,8 +419,11 @@ defmodule LifeOrg.AIHandler do
     - Offering contextual advice based on journal entries and previous comments
     - Creating related or follow-up todos
     - Understanding progress and obstacles from the comment history
+    - Searching the web for current information, resources, or guidance related to the todo
 
-    Be supportive and provide actionable advice specific to this todo. Use the available tools when the user wants to modify the todo or create related tasks.
+    You have access to web search capabilities to find current information, tutorials, best practices, or resources that would help complete this todo effectively. Use web search when it would provide valuable, up-to-date information for accomplishing the task.
+
+    Be supportive and provide actionable advice specific to this todo. Use the available tools when the user wants to modify the todo, create related tasks, or needs current information from the internet.
     """
   end
 
@@ -558,6 +569,11 @@ defmodule LifeOrg.AIHandler do
     existing_tags = get_unique_tags(all_todos)
     
     [
+      %{
+        "type" => "web_search_20250305",
+        "name" => "web_search",
+        "max_uses" => 5
+      },
       %{
         "name" => "create_related_todo",
         "description" => "Create a new todo related to the current one",

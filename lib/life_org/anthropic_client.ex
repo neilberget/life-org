@@ -17,7 +17,7 @@ defmodule LifeOrg.AnthropicClient do
     ]
     
     IO.puts("Making request to #{@api_url}...")
-    case Req.post(@api_url, json: body, headers: headers) do
+    case Req.post(@api_url, json: body, headers: headers, receive_timeout: 120_000) do
       {:ok, %{status: 200, body: body}} ->
         IO.puts("Success response received")
         {:ok, body}

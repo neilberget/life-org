@@ -26,7 +26,7 @@ journal_entries:
 - has_many :todos (reverse reference for todo creation context)
 
 todos:
-- id, title, description, completed, priority, due_date, due_time, ai_generated, tags (JSON), workspace_id, journal_entry_id (nullable), timestamps
+- id, title, description, completed, priority, due_date, due_time, ai_generated, current, tags (JSON), workspace_id, journal_entry_id (nullable), timestamps
 - belongs_to :journal_entry (tracks originating journal entry for AI-created todos)
 
 conversations:
@@ -51,12 +51,14 @@ todo_comments:
    - Full conversation history sent to AI
    - Context-aware responses using journal entries
    - AI can create and manage todos via tool calls
+   - Web search capabilities for current information and resources
 
 3. **Smart Todo Management**
-   - Priority-based sorting
+   - Priority-based sorting with current todos at top
    - AI-generated todos from chat conversations
    - Full editing capabilities
    - Due date tracking
+   - Start/stop workflow to mark current work items
 
 4. **Modern UI/UX**
    - Three-column responsive layout
@@ -89,6 +91,7 @@ todo_comments:
 - **Async processing**: Long-running AI requests handled in background tasks
 - **Comprehensive logging**: Detailed logging for debugging API interactions
 - **Tool calling**: AI can execute actions (create/complete todos) via structured responses
+- **Web search integration**: Claude can search the web for current information and resources (120s timeout)
 
 ### Development Workflow
 - **Fix warnings immediately**: Prefers clean compilation with zero warnings
@@ -338,3 +341,10 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Interactive Checkboxes**: Use `push_event("show_modal")` after checkbox updates to prevent modal from closing
 - **Checkbox State Management**: JavaScript maintains `data-current-state` attributes to handle optimistic updates
 - **Event Handling**: Checkbox clicks use `preventDefault()` and `stopPropagation()` to prevent unwanted interactions
+
+## Database Constraints & Cascading Deletes
+- **Foreign Key Design**: All related entities use `on_delete: :delete_all` for proper cascading
+- **Todo Deletion**: Automatically cascades to delete conversations and chat messages
+- **Migration Pattern**: When updating constraints in MySQL, use `drop constraint` followed by `modify` (MySQL doesn't support `drop_if_exists` for constraints)
+- **Constraint Names**: Follow pattern `{table}_{column}_fkey` (e.g., `chat_messages_conversation_id_fkey`)
+- **WorkspaceService**: Relies on database-level cascading rather than manual deletion queries for efficiency
