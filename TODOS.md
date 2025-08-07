@@ -1,5 +1,4 @@
 - Archive journal entries -- or better verb, but they get excluded from future context
-- Should be MCP Server
 - Integrations. If i paste an asana link into a todo, should be smart
 - expand chat view
 - generate embeddings for all journal entries and todos

@@ -874,9 +874,13 @@ defmodule LifeOrgWeb.OrganizerLive do
     updated_todos = Enum.reduce(tool_actions, socket.assigns.todos, fn action, todos ->
       case AIHandler.execute_tool_action(action, socket.assigns.current_workspace.id) do
         {:ok, todo} when action.action == :create_todo ->
-          [todo | todos] |> sort_todos()
+          # Preload journal_entry for new todos
+          todo_with_journal = Repo.preload(todo, :journal_entry)
+          [todo_with_journal | todos] |> sort_todos()
         {:ok, updated_todo} when action.action == :complete_todo ->
-          update_todo_in_list(todos, updated_todo)
+          # Preload journal_entry for updated todos
+          todo_with_journal = Repo.preload(updated_todo, :journal_entry)
+          update_todo_in_list(todos, todo_with_journal)
         _ ->
           todos
       end
@@ -972,9 +976,13 @@ defmodule LifeOrgWeb.OrganizerLive do
       {created_todos, updated_todos} = Enum.reduce(todo_actions, {[], socket.assigns.todos}, fn action, {new_acc, todos_acc} ->
         case AIHandler.execute_tool_action(action, workspace_id) do
           {:ok, todo} when action.action == :create_todo ->
-            {[todo | new_acc], todos_acc}
+            # Preload journal_entry for new todos (especially important since these are created from journal entries)
+            todo_with_journal = Repo.preload(todo, :journal_entry)
+            {[todo_with_journal | new_acc], todos_acc}
           {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
-            updated_todos_list = update_todo_in_list(todos_acc, updated_todo)
+            # Preload journal_entry for updated todos
+            todo_with_journal = Repo.preload(updated_todo, :journal_entry)
+            updated_todos_list = update_todo_in_list(todos_acc, todo_with_journal)
             {new_acc, updated_todos_list}
           _ ->
             {new_acc, todos_acc}
@@ -1071,9 +1079,13 @@ defmodule LifeOrgWeb.OrganizerLive do
     updated_todos = Enum.reduce(tool_actions, socket.assigns.todos, fn action, todos ->
       case AIHandler.execute_tool_action(action, socket.assigns.current_workspace.id) do
         {:ok, todo} when action.action == :create_todo ->
-          [todo | todos] |> sort_todos()
+          # Preload journal_entry for new todos
+          todo_with_journal = Repo.preload(todo, :journal_entry)
+          [todo_with_journal | todos] |> sort_todos()
         {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
-          update_todo_in_list(todos, updated_todo)
+          # Preload journal_entry for updated todos
+          todo_with_journal = Repo.preload(updated_todo, :journal_entry)
+          update_todo_in_list(todos, todo_with_journal)
         _ ->
           todos
       end
@@ -1083,7 +1095,11 @@ defmodule LifeOrgWeb.OrganizerLive do
     viewing_todo = case socket.assigns[:viewing_todo] do
       nil -> nil
       current_todo ->
-        Enum.find(updated_todos, current_todo, fn todo -> todo.id == current_todo.id end)
+        # Find the updated todo and ensure it has journal_entry preloaded
+        case Enum.find(updated_todos, fn todo -> todo.id == current_todo.id end) do
+          nil -> current_todo
+          found_todo -> Repo.preload(found_todo, :journal_entry)
+        end
     end
     
     # Reload todo conversations list since we may have created new todos

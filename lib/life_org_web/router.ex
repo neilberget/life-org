@@ -21,6 +21,9 @@ defmodule LifeOrgWeb.Router do
     live "/journal/:id", JournalEntryLive
   end
 
+  # MCP server endpoint
+  forward "/mcp", Hermes.Server.Transport.StreamableHTTP.Plug,
+    server: LifeOrg.MCPServer
 
   # Other scopes may use custom stacks.
   # scope "/api", LifeOrgWeb do
