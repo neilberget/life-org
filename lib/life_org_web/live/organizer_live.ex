@@ -219,14 +219,25 @@ defmodule LifeOrgWeb.OrganizerLive do
   def handle_event("process_link_previews", %{"content" => content}, socket) do
     try do
       # Process content with link previews
-      processed_content =
+      link_processed_content =
         LifeOrg.Decorators.Pipeline.process_content_safe(
           content,
           socket.assigns.current_workspace.id,
           %{enable_decorators: true, fetch_timeout: 3000}
         )
 
-      {:reply, %{processed_content: processed_content}, socket}
+      # Also apply checkbox processing (like render_interactive_description does)
+      # Convert markdown to HTML first
+      html = Earmark.as_html!(link_processed_content)
+
+      # Transform checkboxes to be interactive (using a generic todo_id since we don't have context)
+      # process_link_previews is typically called from modal contexts, so use interactive checkboxes
+      interactive_html =
+        LifeOrgWeb.Components.TodoComponent.make_checkboxes_interactive(html, "preview",
+          interactive: true
+        )
+
+      {:reply, %{processed_content: interactive_html}, socket}
     rescue
       error ->
         {:reply, %{error: "Processing failed: #{inspect(error)}"}, socket}

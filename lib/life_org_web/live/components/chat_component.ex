@@ -6,13 +6,13 @@ defmodule LifeOrgWeb.Components.ChatComponent do
     ~H"""
     <div class="h-full flex flex-col">
       <%= if @view == :conversations do %>
-        <.conversation_selection_view 
-          conversations={@conversations} 
+        <.conversation_selection_view
+          conversations={@conversations}
           tag_filter={assigns[:tag_filter]}
         />
       <% else %>
-        <.chat_view 
-          messages={@messages} 
+        <.chat_view
+          messages={@messages}
           current_conversation={@current_conversation}
           tag_filter={assigns[:tag_filter]}
         />
@@ -37,7 +37,7 @@ defmodule LifeOrgWeb.Components.ChatComponent do
           </svg>
         </button>
       </div>
-      
+
       <!-- Tag Filter Warning -->
       <%= if assigns[:tag_filter] do %>
         <div class="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -60,7 +60,7 @@ defmodule LifeOrgWeb.Components.ChatComponent do
           </button>
         </div>
       <% end %>
-      
+
       <button
         phx-click="new_conversation"
         class="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
@@ -71,7 +71,7 @@ defmodule LifeOrgWeb.Components.ChatComponent do
         New Chat
       </button>
     </div>
-    
+
     <!-- Conversations List -->
     <div class="flex-1 overflow-y-auto p-4">
       <%= if length(@conversations || []) == 0 do %>
@@ -121,11 +121,11 @@ defmodule LifeOrgWeb.Components.ChatComponent do
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
           </svg>
         </button>
-        
+
         <h2 class="text-lg font-bold text-gray-800 flex-1 truncate">
           <%= if @current_conversation, do: @current_conversation.title, else: "New Chat" %>
         </h2>
-        
+
         <button
           phx-click="toggle_ai_sidebar"
           class="p-1 rounded-md hover:bg-gray-200 transition-colors"
@@ -136,7 +136,7 @@ defmodule LifeOrgWeb.Components.ChatComponent do
           </svg>
         </button>
       </div>
-      
+
       <!-- Tag Filter Indicator -->
       <%= if assigns[:tag_filter] do %>
         <div class="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
@@ -163,10 +163,10 @@ defmodule LifeOrgWeb.Components.ChatComponent do
         </div>
       <% end %>
     </div>
-    
+
     <!-- Chat Messages -->
     <.chat_messages messages={@messages} />
-    
+
     <!-- Chat Input -->
     <.chat_input />
     """
@@ -236,5 +236,4 @@ defmodule LifeOrgWeb.Components.ChatComponent do
     </form>
     """
   end
-
 end

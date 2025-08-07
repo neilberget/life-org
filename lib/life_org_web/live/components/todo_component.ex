@@ -1,6 +1,7 @@
 defmodule LifeOrgWeb.Components.TodoComponent do
   use Phoenix.Component
   import LifeOrgWeb.Components.ModalComponent
+  import LifeOrgWeb.Components.RichTextEditorComponent
   import Phoenix.HTML
 
   def todo_column(assigns) do
@@ -216,7 +217,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <div class="text-sm text-gray-600 mt-1">
             <div id={"todo-list-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
-              <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+              <%= raw(render_interactive_description(@todo.description, @todo.id, false)) %>
             </div>
           </div>
         <% end %>
@@ -362,7 +363,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <div class="text-sm text-gray-600 mt-1">
             <div id={"todo-list-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
-              <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
+              <%= raw(render_interactive_description(@todo.description, @todo.id, false)) %>
             </div>
           </div>
         <% end %>
@@ -440,12 +441,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-          <textarea
+          <.rich_text_editor
+            id={"edit-todo-description-#{@todo.id}"}
             name="todo[description]"
-            class="w-full p-3 border border-gray-300 rounded-lg resize-y h-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            label="Description"
+            value={@todo.description || ""}
             placeholder="Optional description..."
-          ><%= @todo.description || "" %></textarea>
+            min_height="120px"
+          />
         </div>
 
         <div>
@@ -530,12 +533,13 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-          <textarea
+          <.rich_text_editor
+            id="add-todo-description"
             name="todo[description]"
-            class="w-full p-3 border border-gray-300 rounded-lg resize-y h-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            label="Description"
             placeholder="Optional description..."
-          ></textarea>
+            min_height="120px"
+          />
         </div>
 
         <div>
@@ -970,70 +974,69 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     |> Enum.sort()
   end
 
-  defp render_interactive_description(description, todo_id) do
+  defp render_interactive_description(description, todo_id, interactive \\ true) do
     # Convert markdown to HTML first
     html = Earmark.as_html!(description)
 
-    # Transform checkboxes to be interactive
-    interactive_html = make_checkboxes_interactive(html, todo_id)
+    # Transform checkboxes based on context
+    processed_html = make_checkboxes_interactive(html, todo_id, interactive: interactive)
 
-    # Return the interactive HTML - link previews are handled by the LinkPreviewLoader hook
-    interactive_html
+    # Return the processed HTML - link previews are handled by the LinkPreviewLoader hook
+    processed_html
   end
 
-  defp make_checkboxes_interactive(html, todo_id) do
-    # Handle the case where Earmark puts checkbox text on the next line after <li>
+  def make_checkboxes_interactive(html, todo_id, opts \\ []) do
+    interactive = Keyword.get(opts, :interactive, true)
     lines = String.split(html, "\n")
 
     {processed_lines, _} =
       Enum.map_reduce(lines, 0, fn line, checkbox_index ->
-        trimmed_line = String.trim(line)
-
         cond do
-          String.starts_with?(trimmed_line, "[ ]") ->
-            # Unchecked checkbox on its own line
-            updated_line =
-              String.replace(
-                line,
-                "[ ]",
-                "<input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">",
-                global: false
-              )
+          # Handle any occurrence of [ ] (unchecked checkbox) - anywhere in the line
+          String.contains?(line, "[ ]") and not String.contains?(line, "<input") ->
+            checkbox_html =
+              if interactive do
+                "<input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
+              else
+                "<input type=\"checkbox\" disabled class=\"mr-2 my-0 align-middle checkbox-readonly\">"
+              end
 
+            updated_line = String.replace(line, ~r/\[\s*\]/, checkbox_html, global: false)
             {updated_line, checkbox_index + 1}
 
-          String.starts_with?(trimmed_line, "[x]") or String.starts_with?(trimmed_line, "[X]") ->
-            # Checked checkbox on its own line
-            updated_line =
-              String.replace(
-                line,
-                ~r/\[x\]|\[X\]/i,
+          # Handle any occurrence of [x] or [X] (checked checkbox) - anywhere in the line
+          String.match?(line, ~r/\[x\]/i) and not String.contains?(line, "<input") ->
+            checkbox_html =
+              if interactive do
                 "<input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
-              )
+              else
+                "<input type=\"checkbox\" checked disabled class=\"mr-2 my-0 align-middle checkbox-readonly\">"
+              end
 
+            updated_line = String.replace(line, ~r/\[x\]/i, checkbox_html, global: false)
             {updated_line, checkbox_index + 1}
 
-          String.contains?(line, "<li>[ ]") ->
-            # Unchecked checkbox inline with <li>
-            updated_line =
-              String.replace(
-                line,
-                "<li>[ ]",
-                "<li><input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">",
-                global: false
-              )
+          # Handle Unicode checkbox symbols (□ and ☑)
+          String.contains?(line, "□") ->
+            checkbox_html =
+              if interactive do
+                "<input type=\"checkbox\" data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
+              else
+                "<input type=\"checkbox\" disabled class=\"mr-2 my-0 align-middle checkbox-readonly\">"
+              end
 
+            updated_line = String.replace(line, "□", checkbox_html, global: false)
             {updated_line, checkbox_index + 1}
 
-          String.contains?(line, "<li>[x]") or String.contains?(line, "<li>[X]") ->
-            # Checked checkbox inline with <li>
-            updated_line =
-              String.replace(
-                line,
-                ~r/<li>\[x\]|<li>\[X\]/i,
-                "<li><input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
-              )
+          String.contains?(line, "☑") ->
+            checkbox_html =
+              if interactive do
+                "<input type=\"checkbox\" checked data-todo-checkbox data-todo-id=\"#{todo_id}\" data-checkbox-index=\"#{checkbox_index}\" class=\"mr-2 my-0 align-middle\">"
+              else
+                "<input type=\"checkbox\" checked disabled class=\"mr-2 my-0 align-middle checkbox-readonly\">"
+              end
 
+            updated_line = String.replace(line, "☑", checkbox_html, global: false)
             {updated_line, checkbox_index + 1}
 
           true ->
