@@ -101,6 +101,9 @@ todo_comments:
 - **JavaScript Hooks**: LinkPreviewLoader handles client-side async loading of processed content
 - **Database Caching**: Link metadata cached in MySQL with TTL to reduce API calls
 - **Priority System**: Higher priority decorators (GitHub: 10) override generic web decorator (1)
+- **OAuth2 Authentication**: Ueberauth-based OAuth2 flows for platform integrations (GitHub, future Asana/Jira)
+- **Global User Integrations**: Authentication persists across all workspaces - no re-auth needed per workspace
+- **Environment Variables**: Project-specific .env file support with fallback to system environment
 
 ### Development Workflow
 - **Fix warnings immediately**: Prefers clean compilation with zero warnings

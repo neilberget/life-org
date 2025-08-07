@@ -1,0 +1,126 @@
+<div class="max-w-4xl mx-auto py-8 px-4">
+  <div class="bg-white shadow-lg rounded-lg">
+    <div class="border-b border-gray-200 p-6">
+      <h1 class="text-2xl font-bold text-gray-900">Integration Settings</h1>
+      <p class="text-sm text-gray-600 mt-1">
+        Connect your accounts to access private repositories and enhance your workflow.
+      </p>
+    </div>
+
+    <div class="p-6">
+      <!-- Connected Integrations -->
+      <%= if Enum.any?(@user_integrations) do %>
+        <div class="mb-8">
+          <h2 class="text-lg font-semibold text-gray-800 mb-4">Connected Accounts</h2>
+          <div class="space-y-4">
+            <%= for integration <- @user_integrations do %>
+              <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                  </div>
+                  
+                  <div>
+                    <div class="font-medium text-gray-900">
+                      <%= integration.provider_name %>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                      Connected as <%= integration.username || "Unknown" %>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">
+                    Connected
+                  </span>
+                  
+                  <form method="post" action={"/auth/#{String.downcase(integration.provider_name)}"} class="inline">
+                    <input type="hidden" name="_method" value="delete" />
+                    <input type="hidden" name="workspace_id" value={@workspace_id} />
+                    <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
+                    <button type="submit" 
+                            class="text-sm text-red-600 hover:text-red-800 transition-colors"
+                            onclick="return confirm('Are you sure you want to disconnect this account?')">
+                      Disconnect
+                    </button>
+                  </form>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Available Integrations -->
+      <div>
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Available Integrations</h2>
+        <div class="grid gap-4 md:grid-cols-2">
+          <%= for provider <- @available_providers do %>
+            <% is_connected = Enum.any?(@user_integrations, fn ui -> 
+              String.downcase(ui.provider_name) == provider.provider 
+            end) %>
+            
+            <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 bg-gray-900 rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
+                  <%= if provider.icon == "github" do %>
+                    <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                  <% end %>
+                </div>
+                
+                <div class="flex-1">
+                  <h3 class="font-semibold text-gray-900"><%= provider.name %></h3>
+                  <p class="text-sm text-gray-600 mt-1"><%= provider.description %></p>
+                  
+                  <%= if provider.scopes do %>
+                    <div class="mt-2">
+                      <div class="text-xs text-gray-500 mb-1">Permissions:</div>
+                      <div class="flex flex-wrap gap-1">
+                        <%= for scope <- provider.scopes do %>
+                          <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                            <%= scope %>
+                          </span>
+                        <% end %>
+                      </div>
+                    </div>
+                  <% end %>
+                  
+                  <div class="mt-4">
+                    <%= if is_connected do %>
+                      <span class="inline-flex items-center gap-1 text-sm text-green-600">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                        Connected
+                      </span>
+                    <% else %>
+                      <a href={"/auth/#{provider.provider}?workspace_id=#{@workspace_id}&redirect_to=/settings/integrations"}
+                         class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.102m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                        Connect
+                      </a>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+      
+      <!-- Back to main app -->
+      <div class="mt-8 pt-6 border-t border-gray-200">
+        <a href="/" class="text-sm text-gray-600 hover:text-gray-800 transition-colors">
+          ← Back to Life Organizer
+        </a>
+      </div>
+    </div>
+  </div>
+</div>

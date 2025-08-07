@@ -62,6 +62,9 @@ defmodule LifeOrg.MixProject do
       {:req, "~> 0.4"},
       {:hermes_mcp, "~> 0.9"},
       {:cors_plug, "~> 3.0"},
+      {:ueberauth, "~> 0.10"},
+      {:ueberauth_github, "~> 0.8"},
+      {:dotenvy, "~> 0.8"},
       {:tidewave, "~> 0.2", only: :dev}
     ]
   end

@@ -69,7 +69,9 @@ defmodule LifeOrg.Integrations.Decorators.GitHub do
     
     case parse_github_url(url) do
       {:ok, github_info} ->
-        fetch_github_data(github_info, credentials)
+        # Try to get OAuth2 token for authenticated access
+        enhanced_credentials = enhance_credentials_with_oauth(credentials)
+        fetch_github_data(github_info, enhanced_credentials)
       
       {:error, reason} ->
         Logger.warning("Failed to parse GitHub URL #{url}: #{reason}")
@@ -714,5 +716,59 @@ defmodule LifeOrg.Integrations.Decorators.GitHub do
       <path fill-rule="evenodd" d="M7.177 3.073L9.573.677A.25.25 0 0 1 10 .854v4.792a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354zM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25zM11 2.5h-1V4h1a1 1 0 0 1 1 1v5.628a2.251 2.251 0 1 1-1.5 0V5.5a2.5 2.5 0 0 0-2.5-2.5h-1v-.5a.5.5 0 0 1 1 0V2.5z"/>
     </svg>
     """
+  end
+
+  ## OAuth2 Integration
+
+  defp enhance_credentials_with_oauth(credentials) do
+    # Try to get OAuth2 token from the current workspace
+    # This will be called from the decorator pipeline which should have workspace context
+    case get_workspace_oauth_token() do
+      {:ok, oauth_token} ->
+        Logger.debug("Using OAuth2 token for GitHub API access")
+        Map.put(credentials, "token", oauth_token)
+      
+      {:error, reason} ->
+        Logger.debug("No OAuth2 token available: #{inspect(reason)}, using unauthenticated access")
+        credentials
+    end
+  end
+
+  defp get_workspace_oauth_token() do
+    # Get the current workspace from the process context
+    # This is a bit of a hack - in a real implementation, we'd pass workspace_id through the pipeline
+    case Process.get(:current_workspace_id) do
+      nil ->
+        # Try to get default workspace
+        case get_default_workspace_id() do
+          {:ok, workspace_id} -> get_github_token_for_workspace(workspace_id)
+          error -> error
+        end
+      
+      workspace_id ->
+        get_github_token_for_workspace(workspace_id)
+    end
+  end
+
+  defp get_default_workspace_id() do
+    # Get the default workspace - this should match the logic in WorkspaceService
+    case LifeOrg.WorkspaceService.get_default_workspace() do
+      %{id: id} -> {:ok, id}
+      _ -> {:error, :no_default_workspace}
+    end
+  end
+
+  defp get_github_token_for_workspace(workspace_id) do
+    try do
+      # Use the AuthController function to get the access token
+      case LifeOrgWeb.AuthController.get_access_token(:github, workspace_id) do
+        {:ok, token} -> {:ok, token}
+        {:error, reason} -> {:error, reason}
+      end
+    rescue
+      error -> 
+        Logger.debug("Failed to get GitHub token: #{inspect(error)}")
+        {:error, :auth_controller_error}
+    end
   end
 end

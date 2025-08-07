@@ -1,5 +1,25 @@
 import Config
 
+# Load .env file if it exists (for development)
+if File.exists?(".env") and config_env() in [:dev, :test] do
+  try do
+    env_vars = Dotenvy.source!([".env"])
+    # Set environment variables so System.get_env() can find them
+    Enum.each(env_vars, fn {key, value} -> System.put_env(key, value) end)
+  catch
+    _ -> 
+      # Dotenvy not available, continue without .env loading
+      :ok
+  end
+end
+
+# Configure GitHub OAuth2 (loaded after .env)
+if config_env() in [:dev, :test] do
+  config :ueberauth, Ueberauth.Strategy.Github.OAuth,
+    client_id: System.get_env("GITHUB_CLIENT_ID"),
+    client_secret: System.get_env("GITHUB_CLIENT_SECRET")
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

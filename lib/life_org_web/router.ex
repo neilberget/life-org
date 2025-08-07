@@ -19,6 +19,19 @@ defmodule LifeOrgWeb.Router do
 
     live "/", OrganizerLive
     live "/journal/:id", JournalEntryLive
+    
+    # Integration settings
+    get "/settings/integrations", AuthController, :settings
+    delete "/auth/:provider", AuthController, :disconnect
+  end
+
+  # OAuth2 authentication routes
+  scope "/auth", LifeOrgWeb do
+    pipe_through :browser
+
+    get "/:provider", AuthController, :request
+    get "/:provider/callback", AuthController, :callback
+    post "/:provider/callback", AuthController, :callback
   end
 
   # MCP server endpoint

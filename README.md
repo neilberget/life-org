@@ -7,6 +7,8 @@ A Phoenix LiveView application that helps organize life with journal entries, AI
 - **Journal Management**: Write and organize journal entries with markdown support, mood tracking, and date organization
 - **AI Chat Assistant**: Context-aware AI conversations that can create and manage todos based on your journal entries
 - **Smart Todo Management**: Priority-based todos with AI extraction, comments, interactive checkboxes, and due date tracking
+- **GitHub Integration**: Rich link previews for repositories, issues, and pull requests (including private repos with OAuth2)
+- **Link Previews**: Automatic rich previews for web links with title, description, and metadata
 - **MCP Server Integration**: Model Context Protocol server for external AI tool access
 - **Modern UI/UX**: Clean three-column responsive layout with real-time updates
 
@@ -96,19 +98,33 @@ cd life-org
 ```
 
 ### 2. Environment Setup
-Create a `.env` file in the project root:
+Copy the example environment file and configure your API keys:
+```bash
+cp .env.example .env
+```
+
+Edit the `.env` file and set your API keys:
 ```bash
 # Required: Set your Anthropic API key
-export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
+
+# Required for GitHub integration: Create a GitHub OAuth App
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
 
 # Optional: Customize database settings if needed
-export DATABASE_URL="ecto://root:root@127.0.0.1:3306/life_org_dev"
+# DATABASE_URL=mysql://root:root@127.0.0.1/life_org_dev
 ```
 
-Load the environment variables:
-```bash
-source .env
-```
+#### Setting up GitHub Integration (for private repository access)
+1. Go to [GitHub Settings > Developer settings > OAuth Apps](https://github.com/settings/developers)
+2. Click "New OAuth App" and fill in:
+   - **Application name**: `Life Organizer` (or your preferred name)
+   - **Homepage URL**: `http://localhost:4000`
+   - **Authorization callback URL**: `http://localhost:4000/auth/github/callback`
+   - **Enable Device Flow**: Leave unchecked
+3. After creating the app, copy the **Client ID** and **Client Secret** to your `.env` file
+4. The GitHub integration provides rich link previews for private repositories, issues, and pull requests
 
 ### 3. Install Dependencies
 ```bash

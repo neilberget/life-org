@@ -4,6 +4,7 @@
 # This configuration file is loaded before any dependency and
 # is restricted to this project.
 
+
 # General application configuration
 import Config
 
@@ -64,6 +65,15 @@ config :phoenix, :json_library, Jason
 # Anthropic API configuration
 config :life_org,
   anthropic_api_key: System.get_env("ANTHROPIC_API_KEY")
+
+# Ueberauth configuration
+config :ueberauth, Ueberauth,
+  providers: [
+    github: {Ueberauth.Strategy.Github, [
+      default_scope: "repo,user:email",
+      allow_private_emails: true
+    ]}
+  ]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

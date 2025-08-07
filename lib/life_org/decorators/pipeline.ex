@@ -52,6 +52,11 @@ defmodule LifeOrg.Decorators.Pipeline do
   defp do_process_content(content, workspace_id, opts) do
     Logger.debug("Processing content for decorators")
     
+    # Set workspace context for OAuth2 token access
+    if workspace_id do
+      Process.put(:current_workspace_id, workspace_id)
+    end
+    
     # Extract URLs from content
     urls = LinkDetector.extract_urls(content)
     
@@ -59,7 +64,12 @@ defmodule LifeOrg.Decorators.Pipeline do
       content
     else
       # Process URLs and inject previews
-      process_urls_and_inject(content, urls, workspace_id, opts)
+      result = process_urls_and_inject(content, urls, workspace_id, opts)
+      
+      # Clean up process context
+      Process.delete(:current_workspace_id)
+      
+      result
     end
   end
 
