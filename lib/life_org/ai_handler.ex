@@ -15,7 +15,11 @@ defmodule LifeOrg.AIHandler do
     IO.puts("Total messages in conversation: #{length(messages)}")
     
     IO.puts("Sending message to Anthropic API with tools...")
-    case AnthropicClient.send_message(messages, system_prompt, tools) do
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
       {:ok, response} ->
         IO.puts("Got response from API: #{inspect(response)}")
         content_blocks = AnthropicClient.extract_content_from_response(response)
@@ -33,7 +37,7 @@ defmodule LifeOrg.AIHandler do
         end
         
       {:error, error} ->
-        IO.puts("API error: #{inspect(error)}")
+        IO.puts("API error after retries: #{inspect(error)}")
         {:error, "Sorry, I encountered an error: #{error}"}
     end
   end
@@ -88,7 +92,12 @@ defmodule LifeOrg.AIHandler do
     
     messages = [%{role: "user", content: journal_content}]
     
-    case AnthropicClient.send_message(messages, system_prompt, tools) do
+    # Attempt with retries on timeout errors
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
       {:ok, response} ->
         content_blocks = AnthropicClient.extract_content_from_response(response)
         tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
@@ -98,8 +107,42 @@ defmodule LifeOrg.AIHandler do
         {:ok, tool_actions}
         
       {:error, error} ->
-        IO.puts("AI error extracting todos: #{inspect(error)}")
+        IO.puts("AI error extracting todos after retries: #{inspect(error)}")
         {:ok, []}
+    end
+  end
+  
+  # Helper function to retry API calls with exponential backoff
+  defp retry_with_backoff(fun, opts) do
+    max_retries = Keyword.get(opts, :max_retries, 2)
+    retry_on = Keyword.get(opts, :retry_on, :timeout)
+    
+    do_retry(fun, 0, max_retries, retry_on)
+  end
+  
+  defp do_retry(fun, attempt, max_retries, retry_on) do
+    case fun.() do
+      {:error, %Req.TransportError{reason: :timeout}} when attempt < max_retries and retry_on == :timeout ->
+        # Calculate backoff delay (exponential backoff with base of 2 seconds)
+        delay = round(:timer.seconds(2) * :math.pow(2, attempt))
+        IO.puts("Timeout error on attempt #{attempt + 1}, retrying in #{delay}ms...")
+        Process.sleep(delay)
+        do_retry(fun, attempt + 1, max_retries, retry_on)
+        
+      {:error, "Network error: " <> rest} = error when attempt < max_retries ->
+        # Also handle string-formatted network errors that might contain timeout info
+        if String.contains?(rest, "timeout") and retry_on == :timeout do
+          delay = round(:timer.seconds(2) * :math.pow(2, attempt))
+          IO.puts("Network timeout error on attempt #{attempt + 1}, retrying in #{delay}ms...")
+          Process.sleep(delay)
+          do_retry(fun, attempt + 1, max_retries, retry_on)
+        else
+          error
+        end
+        
+      result ->
+        # Either success or non-retryable error or max retries reached
+        result
     end
   end
   
@@ -428,7 +471,11 @@ defmodule LifeOrg.AIHandler do
     IO.puts("Total messages in todo conversation: #{length(messages)}")
     
     IO.puts("Sending todo message to Anthropic API...")
-    case AnthropicClient.send_message(messages, system_prompt, tools) do
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
       {:ok, response} ->
         IO.puts("Got response from API: #{inspect(response)}")
         content_blocks = AnthropicClient.extract_content_from_response(response)
@@ -454,7 +501,7 @@ defmodule LifeOrg.AIHandler do
         end
         
       {:error, error} ->
-        IO.puts("API error: #{inspect(error)}")
+        IO.puts("API error after retries: #{inspect(error)}")
         {:error, "Sorry, I encountered an error: #{error}"}
     end
   end
@@ -832,7 +879,11 @@ defmodule LifeOrg.AIHandler do
     updated_messages = messages ++ [assistant_message_with_tools] ++ tool_results
     
     IO.puts("Sending tool results back to API...")
-    case AnthropicClient.send_message(updated_messages, system_prompt, tools) do
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(updated_messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
       {:ok, final_response} ->
         IO.puts("Got final response from API")
         final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
@@ -877,7 +928,11 @@ defmodule LifeOrg.AIHandler do
     # Continue conversation with tool results
     updated_messages = messages ++ [assistant_message_with_tools] ++ tool_results
     
-    case AnthropicClient.send_message(updated_messages, system_prompt, tools) do
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(updated_messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
       {:ok, final_response} ->
         final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
         

@@ -97,6 +97,7 @@ todo_comments:
 - **Tool calling**: AI can execute actions (create/complete todos) via structured responses
 - **Web search integration**: Claude can search the web for current information and resources (120s timeout)
 - **Integration System**: Modular decorator pattern for rich link previews (web links, GitHub repos/issues/PRs)
+- **Retry Mechanism**: Automatic retry with exponential backoff for API timeout errors (up to 2 retries, 2s/4s delays)
 
 ### Integration Architecture
 - **Decorator Pattern**: Platform-specific decorators (GitHub, Asana, etc.) provide rich previews for URLs
