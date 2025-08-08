@@ -5,7 +5,7 @@ defmodule LifeOrg.MCP.Tools.TodoTools do
 
   use Hermes.Server.Component, type: :tool
 
-  alias LifeOrg.{Todo, Repo, WorkspaceService}
+  alias LifeOrg.{Todo, Repo}
   alias Hermes.Server.Response
 
   import Ecto.Query
@@ -30,8 +30,13 @@ defmodule LifeOrg.MCP.Tools.TodoTools do
     # Use default workspace if no workspace_id specified
     workspace_id = case Map.get(params, "workspace_id") do
       nil -> 
-        default_workspace = WorkspaceService.get_default_workspace()
-        default_workspace && default_workspace.id || 1
+        # For MCP tools, we don't have user context
+        # Use the first workspace as a fallback
+        import Ecto.Query
+        case LifeOrg.Repo.one(from w in LifeOrg.Workspace, order_by: [asc: w.id], limit: 1) do
+          %{id: id} -> id
+          _ -> 1
+        end
       id -> id
     end
     

@@ -2,46 +2,75 @@ defmodule LifeOrg.WorkspaceService do
   import Ecto.Query, warn: false
   alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Conversation}
 
-  def list_workspaces do
+  def list_workspaces(user_id) do
     Workspace
+    |> where([w], w.user_id == ^user_id)
     |> order_by([w], [desc: w.is_default, asc: w.name])
     |> Repo.all()
   end
 
+  def get_workspace(id, user_id) do
+    Workspace
+    |> where([w], w.id == ^id and w.user_id == ^user_id)
+    |> Repo.one()
+  end
+  
   def get_workspace(id) do
     Repo.get(Workspace, id)
   end
 
+  def get_workspace!(id, user_id) do
+    Workspace
+    |> where([w], w.id == ^id and w.user_id == ^user_id)
+    |> Repo.one!()
+  end
+  
   def get_workspace!(id) do
     Repo.get!(Workspace, id)
   end
 
-  def get_workspace_by_name(name) do
-    Repo.get_by(Workspace, name: name)
+  def get_workspace_by_name(name, user_id) do
+    Repo.get_by(Workspace, name: name, user_id: user_id)
   end
 
-  def get_default_workspace do
-    case Repo.get_by(Workspace, is_default: true) do
+  def get_default_workspace(user_id) do
+    case Repo.get_by(Workspace, is_default: true, user_id: user_id) do
       nil -> 
-        # If no default workspace exists, get the first one
+        # If no default workspace exists, get the first one for this user
         Workspace
+        |> where([w], w.user_id == ^user_id)
         |> first(:id)
         |> Repo.one()
       workspace -> workspace
+    end
+  end
+  
+  def ensure_default_workspace(user) do
+    case get_default_workspace(user.id) do
+      nil ->
+        # Create a default workspace for the user
+        create_workspace(%{
+          name: "Personal",
+          description: "Default personal workspace",
+          is_default: true,
+          user_id: user.id
+        })
+      workspace ->
+        {:ok, workspace}
     end
   end
 
   def create_workspace(attrs \\ %{}) do
     %Workspace{}
     |> Workspace.changeset(attrs)
-    |> maybe_update_default()
+    |> maybe_update_default(attrs["user_id"] || attrs[:user_id])
     |> Repo.insert()
   end
 
   def update_workspace(%Workspace{} = workspace, attrs) do
     workspace
     |> Workspace.changeset(attrs)
-    |> maybe_update_default()
+    |> maybe_update_default(workspace.user_id)
     |> Repo.update()
   end
 
@@ -55,8 +84,8 @@ defmodule LifeOrg.WorkspaceService do
 
   def set_default_workspace(%Workspace{} = workspace) do
     Repo.transaction(fn ->
-      # First, unset all other defaults
-      from(w in Workspace, where: w.is_default == true)
+      # First, unset all other defaults for this user
+      from(w in Workspace, where: w.is_default == true and w.user_id == ^workspace.user_id)
       |> Repo.update_all(set: [is_default: false])
 
       # Then set this one as default
@@ -159,11 +188,12 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   # Private helper functions
-  defp maybe_update_default(changeset) do
+  defp maybe_update_default(changeset, user_id) do
     case Ecto.Changeset.get_change(changeset, :is_default) do
-      true ->
-        # If setting this workspace as default, we need to unset others first
-        # This will be handled in a transaction during the actual insert/update
+      true when not is_nil(user_id) ->
+        # If setting this workspace as default, unset others for this user
+        from(w in Workspace, where: w.is_default == true and w.user_id == ^user_id)
+        |> Repo.update_all(set: [is_default: false])
         changeset
       _ ->
         changeset

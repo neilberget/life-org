@@ -751,8 +751,11 @@ defmodule LifeOrg.Integrations.Decorators.GitHub do
   end
 
   defp get_default_workspace_id() do
-    # Get the default workspace - this should match the logic in WorkspaceService
-    case LifeOrg.WorkspaceService.get_default_workspace() do
+    # For decorators, we don't have user context
+    # This will need to be refactored to pass user context through the decoration pipeline
+    # For now, just use the first workspace as a fallback
+    import Ecto.Query
+    case LifeOrg.Repo.one(from w in LifeOrg.Workspace, order_by: [asc: w.id], limit: 1) do
       %{id: id} -> {:ok, id}
       _ -> {:error, :no_default_workspace}
     end

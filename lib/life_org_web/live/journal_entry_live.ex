@@ -2,6 +2,8 @@ defmodule LifeOrgWeb.JournalEntryLive do
   use LifeOrgWeb, :live_view
   alias LifeOrg.{Repo, JournalEntry}
 
+  on_mount {LifeOrgWeb.UserAuth, :ensure_authenticated}
+
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     case Repo.get(JournalEntry, String.to_integer(id)) do

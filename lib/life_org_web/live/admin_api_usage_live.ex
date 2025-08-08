@@ -2,6 +2,8 @@ defmodule LifeOrgWeb.AdminApiUsageLive do
   use LifeOrgWeb, :live_view
   alias LifeOrg.ApiLog
 
+  on_mount {LifeOrgWeb.UserAuth, :ensure_authenticated}
+
   @impl true
   def mount(_params, _session, socket) do
     socket =

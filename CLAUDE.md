@@ -21,16 +21,26 @@ A Phoenix LiveView application that helps organize life with journal entries, AI
 
 ### Database Design
 ```
+users:
+- id, email, hashed_password, confirmed_at, timestamps
+- has_many :workspaces (user isolation)
+
+workspaces:
+- id, name, description, color, is_default, user_id, timestamps
+- belongs_to :user (ensures data isolation)
+- unique constraint on (user_id, name)
+
 journal_entries:
-- id, content (text), mood, entry_date, tags (JSON), timestamps
-- has_many :todos (reverse reference for todo creation context)
+- id, content (text), mood, entry_date, tags (JSON), workspace_id, timestamps
+- belongs_to :workspace, has_many :todos
 
 todos:
 - id, title, description, completed, priority, due_date, due_time, ai_generated, current, tags (JSON), workspace_id, journal_entry_id (nullable), timestamps
-- belongs_to :journal_entry (tracks originating journal entry for AI-created todos)
+- belongs_to :workspace, belongs_to :journal_entry
 
 conversations:
 - id, title, workspace_id, todo_id (nullable), timestamps
+- belongs_to :workspace
 
 chat_messages:
 - id, conversation_id, role, content, timestamps
@@ -69,6 +79,29 @@ todo_comments:
    - Clean modal interfaces
    - Hover interactions
    - Real-time updates
+
+## Authentication & User Isolation
+
+### User Authentication System
+- **Phoenix Generated Auth**: Uses `mix phx.gen.auth` with bcrypt password hashing
+- **No Public Registration**: Registration disabled, users created via `mix user.create <email> <password>` task
+- **Session-based**: Standard Phoenix session authentication with remember_me functionality
+- **LiveView Integration**: Uses `on_mount {LifeOrgWeb.UserAuth, :ensure_authenticated}` for protected LiveViews
+- **Password Requirements**: Minimum 8 characters for local development
+
+### Workspace Scoping & Data Isolation
+- **User-Scoped Workspaces**: Each user can only access their own workspaces
+- **Automatic Default Workspace**: New users automatically get a "Personal" workspace
+- **Complete Data Isolation**: All entities (journal entries, todos, conversations) are scoped to user's workspaces
+- **Service Layer Updates**: WorkspaceService functions require user_id parameter for proper scoping
+- **Database Constraints**: Foreign key relationships ensure data integrity and cascading deletes
+
+### Mix Tasks for User Management
+```bash
+mix user.create <email> <password>    # Create and confirm new user with default workspace
+mix user.list                         # List all users with confirmation status
+mix user.delete <email>               # Delete user and all associated data
+```
 
 ## User's Coding & Architecture Preferences
 
@@ -389,6 +422,27 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
   - **Conversation View**: Human-friendly display of system prompts, messages, and responses with proper styling
   - **Raw JSON View**: Complete request/response data for debugging
 - **Visual Design**: Role-based styling with icons (👤 User, 🤖 Assistant, ⚙️ System) and color-coded backgrounds
+
+## Vector Search & Embeddings
+
+### Architecture
+- **OpenAI Integration**: Uses `openai_ex` library with text-embedding-3-small model for generating 1536-dimensional embeddings
+- **Background Processing**: `EmbeddingsWorker` GenServer continuously processes content without embeddings (batch size: 5, interval: 30s)
+- **Conditional Startup**: Worker only starts when OPENAI_API_KEY environment variable is present
+- **Database Storage**: Embeddings stored as JSON arrays in MySQL with `embedding` and `embedding_generated_at` columns
+
+### Search Implementation
+- **Semantic Search**: Cosine similarity calculation for vector distance comparison
+- **Unified Search**: Searches across both journal entries and todos simultaneously
+- **Real-time UI**: Search overlay with similarity scores and type indicators
+- **Workspace Scoping**: All searches respect workspace boundaries
+- **Performance**: Indexed `embedding_generated_at` columns for efficient querying of unprocessed content
+
+### Key Technical Decisions
+- **DateTime Handling**: Must use `DateTime.truncate(:second)` for MySQL compatibility with :utc_datetime fields
+- **Pattern Matching**: OpenAI API returns string keys in maps (e.g., `%{"data" => ...}` not `%{data: ...}`)
+- **Error Resilience**: Graceful fallback when API key missing - search functionality disabled but app continues working
+- **Processing Pipeline**: Two-step process - generate embedding via API, then store with proper timestamp truncation
 
 ## Database Constraints & Cascading Deletes
 - **Foreign Key Design**: All related entities use `on_delete: :delete_all` for proper cascading

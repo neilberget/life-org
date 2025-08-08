@@ -2,6 +2,8 @@ defmodule LifeOrgWeb.OrganizerLive do
   use LifeOrgWeb, :live_view
   import Ecto.Query
 
+  on_mount {LifeOrgWeb.UserAuth, :ensure_authenticated}
+
   alias LifeOrg.{
     Repo,
     JournalEntry,
@@ -17,9 +19,15 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def mount(params, _session, socket) do
-    # Get default workspace
-    current_workspace = WorkspaceService.get_default_workspace()
-    workspaces = WorkspaceService.list_workspaces()
+    # Get current user from socket assigns (set by user_auth plug)
+    current_user = socket.assigns.current_user
+    
+    # Ensure user has a default workspace
+    {:ok, _} = WorkspaceService.ensure_default_workspace(current_user)
+    
+    # Get user's workspaces
+    current_workspace = WorkspaceService.get_default_workspace(current_user.id)
+    workspaces = WorkspaceService.list_workspaces(current_user.id)
 
     # Load data for current workspace
     journal_entries = WorkspaceService.list_journal_entries(current_workspace.id)
@@ -137,7 +145,7 @@ defmodule LifeOrgWeb.OrganizerLive do
   def handle_event("load_saved_workspace", %{"workspace_id" => workspace_id}, socket) do
     # Try to load the saved workspace, fall back to current if not found
     workspace =
-      case WorkspaceService.get_workspace(String.to_integer(workspace_id)) do
+      case WorkspaceService.get_workspace(String.to_integer(workspace_id), socket.assigns.current_user.id) do
         nil -> socket.assigns.current_workspace
         ws -> ws
       end
@@ -168,7 +176,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("switch_workspace", %{"id" => id}, socket) do
-    workspace = WorkspaceService.get_workspace!(String.to_integer(id))
+    workspace = WorkspaceService.get_workspace!(String.to_integer(id), socket.assigns.current_user.id)
 
     # Load data for the new workspace
     journal_entries = WorkspaceService.list_journal_entries(workspace.id)
@@ -658,9 +666,10 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("create_workspace", %{"workspace" => params}, socket) do
+    params = Map.put(params, "user_id", socket.assigns.current_user.id)
     case WorkspaceService.create_workspace(params) do
       {:ok, _workspace} ->
-        workspaces = WorkspaceService.list_workspaces()
+        workspaces = WorkspaceService.list_workspaces(socket.assigns.current_user.id)
 
         {:noreply,
          socket
@@ -675,7 +684,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("edit_workspace", %{"id" => id}, socket) do
-    workspace = WorkspaceService.get_workspace!(String.to_integer(id))
+    workspace = WorkspaceService.get_workspace!(String.to_integer(id), socket.assigns.current_user.id)
 
     {:noreply,
      socket
@@ -685,11 +694,11 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("update_workspace", %{"id" => id, "workspace" => params}, socket) do
-    workspace = WorkspaceService.get_workspace!(String.to_integer(id))
+    workspace = WorkspaceService.get_workspace!(String.to_integer(id), socket.assigns.current_user.id)
 
     case WorkspaceService.update_workspace(workspace, params) do
       {:ok, updated_workspace} ->
-        workspaces = WorkspaceService.list_workspaces()
+        workspaces = WorkspaceService.list_workspaces(socket.assigns.current_user.id)
 
         current_workspace =
           if socket.assigns.current_workspace.id == updated_workspace.id do
@@ -713,16 +722,16 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("delete_workspace", %{"id" => id}, socket) do
-    workspace = WorkspaceService.get_workspace!(String.to_integer(id))
+    workspace = WorkspaceService.get_workspace!(String.to_integer(id), socket.assigns.current_user.id)
 
     case WorkspaceService.delete_workspace(workspace) do
       {:ok, _} ->
-        workspaces = WorkspaceService.list_workspaces()
+        workspaces = WorkspaceService.list_workspaces(socket.assigns.current_user.id)
 
         # If we deleted the current workspace, switch to default
         current_workspace =
           if socket.assigns.current_workspace.id == workspace.id do
-            WorkspaceService.get_default_workspace()
+            WorkspaceService.get_default_workspace(socket.assigns.current_user.id)
           else
             socket.assigns.current_workspace
           end

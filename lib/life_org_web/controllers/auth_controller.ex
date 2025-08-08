@@ -11,7 +11,7 @@ defmodule LifeOrgWeb.AuthController do
   use LifeOrgWeb, :controller
   
   require Logger
-  alias LifeOrg.{UserIntegration, Repo, WorkspaceService, Integrations.Registry}
+  alias LifeOrg.{UserIntegration, Repo, Integrations.Registry}
   import Ecto.Query
 
   plug Ueberauth
@@ -226,11 +226,9 @@ defmodule LifeOrgWeb.AuthController do
         get_session(conn, :current_workspace_id)
       
       true ->
-        # Get the default workspace
-        case WorkspaceService.get_default_workspace() do
-          %{id: id} -> id
-          _ -> 1  # Fallback
-        end
+        # For OAuth, we don't have user context yet, so just use 1 as fallback
+        # This will be replaced when proper OAuth user association is implemented
+        1
     end
   end
 
