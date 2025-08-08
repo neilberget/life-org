@@ -66,7 +66,8 @@ defmodule LifeOrg.MixProject do
       {:ueberauth_github, "~> 0.8"},
       {:dotenvy, "~> 0.8"},
       {:number, "~> 1.0"},
-      {:tidewave, "~> 0.2", only: :dev}
+      {:tidewave, "~> 0.2", only: :dev},
+      {:openai_ex, "~> 0.8"}
     ]
   end
 

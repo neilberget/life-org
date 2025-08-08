@@ -16,6 +16,8 @@ defmodule LifeOrg.Todo do
     field :current, :boolean, default: false
     field :tags, {:array, :string}, default: []
     field :comment_count, :integer, virtual: true, default: 0
+    field :embedding, {:array, :float}
+    field :embedding_generated_at, :utc_datetime
 
     belongs_to :workspace, Workspace
     belongs_to :journal_entry, JournalEntry

@@ -30,25 +30,132 @@
         </form>
       </div>
       
-      <div class="flex items-center space-x-2">
-        <button 
-          phx-click="show_workspace_form"
-          class="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          New Workspace
-        </button>
-        <button 
-          phx-click="edit_workspace" 
-          phx-value-id={@current_workspace.id}
-          class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-        >
-          Edit
-        </button>
+      <div class="flex items-center space-x-4">
+        <!-- Search Bar -->
+        <div class="relative">
+          <form phx-submit="perform_search">
+            <input
+              type="text"
+              name="query"
+              value={@search_query}
+              placeholder="Vector search..."
+              class="w-64 px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-8"
+              autocomplete="off"
+            />
+            <svg class="w-4 h-4 text-gray-400 absolute left-2 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+          </form>
+          <%= if @search_query != "" do %>
+            <button
+              phx-click="clear_search"
+              class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          <% end %>
+        </div>
+        
+        <div class="flex items-center space-x-2">
+          <button 
+            phx-click="show_workspace_form"
+            class="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            New Workspace
+          </button>
+          <button 
+            phx-click="edit_workspace" 
+            phx-value-id={@current_workspace.id}
+            class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+          >
+            Edit
+          </button>
+        </div>
       </div>
     </div>
     
     <p class="text-sm text-gray-600 mt-1"><%= @current_workspace.description %></p>
   </div>
+
+  <!-- Search Results Overlay -->
+  <%= if @show_search_results do %>
+    <div class="bg-white border-b border-gray-200 shadow-lg">
+      <div class="px-6 py-4">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-800">
+            Search Results 
+            <%= if @searching do %>
+              <span class="text-sm text-gray-500">(searching...)</span>
+            <% else %>
+              <span class="text-sm text-gray-500">(<%= length(@search_results) %> results)</span>
+            <% end %>
+          </h3>
+          <button
+            phx-click="clear_search"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="space-y-3 max-h-96 overflow-y-auto">
+          <%= for {type, item, score} <- @search_results do %>
+            <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+              <div class="flex items-start justify-between">
+                <div class="flex-1">
+                  <%= case type do %>
+                    <% :journal_entry -> %>
+                      <div class="flex items-center space-x-2 mb-2">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                        </svg>
+                        <span class="text-sm font-medium text-blue-600">Journal Entry</span>
+                        <span class="text-xs text-gray-500"><%= Date.to_string(item.entry_date) %></span>
+                      </div>
+                      <p class="text-sm text-gray-700 line-clamp-3"><%= String.slice(item.content, 0, 200) %>...</p>
+                    <% :todo -> %>
+                      <div class="flex items-center space-x-2 mb-2">
+                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <span class="text-sm font-medium text-green-600">Todo</span>
+                        <%= if item.completed do %>
+                          <span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">✓ Completed</span>
+                        <% else %>
+                          <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full">Pending</span>
+                        <% end %>
+                      </div>
+                      <h4 class="font-medium text-gray-900 mb-1"><%= item.title %></h4>
+                      <%= if item.description do %>
+                        <p class="text-sm text-gray-700 line-clamp-2"><%= String.slice(item.description, 0, 150) %>...</p>
+                      <% end %>
+                  <% end %>
+                </div>
+                <div class="ml-4 flex-shrink-0">
+                  <div class="text-xs text-gray-500">
+                    Score: <%= :erlang.float_to_binary(score, decimals: 3) %>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <% end %>
+          
+          <%= if length(@search_results) == 0 and not @searching do %>
+            <div class="text-center py-8 text-gray-500">
+              <svg class="w-12 h-12 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.467-.988-5.982-2.57M15 13.299l2.973 2.973a8.954 8.954 0 01-1.192 1.192L15 13.299zM6.228 6.228L3 3l3.228 3.228z"></path>
+              </svg>
+              <p>No results found for "<%= @search_query %>"</p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <!-- New Workspace Form -->
   <%= if @show_workspace_form do %>

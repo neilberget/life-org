@@ -9,7 +9,8 @@ defmodule LifeOrgWeb.OrganizerLive do
     TodoComment,
     AIHandler,
     ConversationService,
-    WorkspaceService
+    WorkspaceService,
+    EmbeddingsService
   }
 
   alias LifeOrgWeb.Components.{JournalComponent, ChatComponent, TodoComponent}
@@ -79,6 +80,10 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:layout_expanded, nil)
      |> assign(:checkbox_update_trigger, 0)
      |> assign(:deleting_todo_id, nil)
+     |> assign(:search_query, "")
+     |> assign(:search_results, [])
+     |> assign(:show_search_results, false)
+     |> assign(:searching, false)
      |> then(fn socket ->
        # Show todo modal if viewing a specific todo
        if viewing_todo do
@@ -301,6 +306,33 @@ defmodule LifeOrgWeb.OrganizerLive do
       error ->
         {:reply, %{error: "Processing failed: #{inspect(error)}"}, socket}
     end
+  end
+
+  @impl true
+  def handle_event("perform_search", %{"query" => query}, socket) do
+    if String.trim(query) == "" do
+      {:noreply,
+       socket
+       |> assign(:search_results, [])
+       |> assign(:show_search_results, false)
+       |> assign(:searching, false)}
+    else
+      {:noreply,
+       socket
+       |> assign(:search_query, query)
+       |> assign(:searching, true)
+       |> perform_vector_search(query)}
+    end
+  end
+
+  @impl true
+  def handle_event("clear_search", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:search_query, "")
+     |> assign(:search_results, [])
+     |> assign(:show_search_results, false)
+     |> assign(:searching, false)}
   end
 
   @impl true
@@ -1518,6 +1550,30 @@ defmodule LifeOrgWeb.OrganizerLive do
       {:ok, Enum.join(updated_lines, "\n")}
     else
       {:error, "No description to update"}
+    end
+  end
+
+  defp perform_vector_search(socket, query) do
+    case EmbeddingsService.search_all(query, workspace_id: socket.assigns.current_workspace.id, limit: 15) do
+      {:ok, results} ->
+        socket
+        |> assign(:search_results, results)
+        |> assign(:show_search_results, true)
+        |> assign(:searching, false)
+
+      {:error, :no_api_key} ->
+        socket
+        |> assign(:search_results, [])
+        |> assign(:show_search_results, false)
+        |> assign(:searching, false)
+        |> put_flash(:error, "Vector search requires OpenAI API key")
+
+      {:error, reason} ->
+        socket
+        |> assign(:search_results, [])
+        |> assign(:show_search_results, false)
+        |> assign(:searching, false)
+        |> put_flash(:error, "Search failed: #{inspect(reason)}")
     end
   end
 end

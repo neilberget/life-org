@@ -7,7 +7,7 @@ defmodule LifeOrg.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
+    base_children = [
       LifeOrgWeb.Telemetry,
       LifeOrg.Repo,
       {DNSCluster, query: Application.get_env(:life_org, :dns_cluster_query) || :ignore},
@@ -19,7 +19,17 @@ defmodule LifeOrg.Application do
       # Start integration registry
       LifeOrg.Integrations.Registry,
       # Start link fetcher service
-      LifeOrg.LinkFetcher,
+      LifeOrg.LinkFetcher
+    ]
+    
+    # Conditionally add embeddings worker if OpenAI API key is present
+    embeddings_worker = if System.get_env("OPENAI_API_KEY") do
+      [LifeOrg.EmbeddingsWorker]
+    else
+      []
+    end
+    
+    children = base_children ++ embeddings_worker ++ [
       # Start a worker by calling: LifeOrg.Worker.start_link(arg)
       # {LifeOrg.Worker, arg},
       # Start to serve requests, typically the last entry

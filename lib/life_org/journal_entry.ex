@@ -8,6 +8,8 @@ defmodule LifeOrg.JournalEntry do
     field :content, :string
     field :tags, {:array, :string}, default: []
     field :entry_date, :date
+    field :embedding, {:array, :float}
+    field :embedding_generated_at, :utc_datetime
 
     belongs_to :workspace, Workspace
     has_many :todos, Todo
