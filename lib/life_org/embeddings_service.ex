@@ -85,6 +85,8 @@ defmodule LifeOrg.EmbeddingsService do
   def search_journal_entries(query_text, opts \\ []) do
     limit = Keyword.get(opts, :limit, 10)
     workspace_id = Keyword.get(opts, :workspace_id)
+    date_from = Keyword.get(opts, :date_from)
+    date_to = Keyword.get(opts, :date_to)
     
     with {:ok, query_embedding} <- generate_embedding(query_text) do
       base_query = from(j in JournalEntry,
@@ -94,6 +96,21 @@ defmodule LifeOrg.EmbeddingsService do
       
       base_query = if workspace_id do
         from(j in base_query, where: j.workspace_id == ^workspace_id)
+      else
+        base_query
+      end
+      
+      # Apply date filtering if provided
+      base_query = if date_from do
+        {:ok, from_date} = Date.from_iso8601(date_from)
+        from(j in base_query, where: fragment("DATE(?)", j.entry_date) >= ^from_date or (is_nil(j.entry_date) and fragment("DATE(?)", j.inserted_at) >= ^from_date))
+      else
+        base_query
+      end
+      
+      base_query = if date_to do
+        {:ok, to_date} = Date.from_iso8601(date_to)
+        from(j in base_query, where: fragment("DATE(?)", j.entry_date) <= ^to_date or (is_nil(j.entry_date) and fragment("DATE(?)", j.inserted_at) <= ^to_date))
       else
         base_query
       end
@@ -115,6 +132,8 @@ defmodule LifeOrg.EmbeddingsService do
   def search_todos(query_text, opts \\ []) do
     limit = Keyword.get(opts, :limit, 10)
     workspace_id = Keyword.get(opts, :workspace_id)
+    date_from = Keyword.get(opts, :date_from)
+    date_to = Keyword.get(opts, :date_to)
     
     with {:ok, query_embedding} <- generate_embedding(query_text) do
       base_query = from(t in Todo,
@@ -124,6 +143,21 @@ defmodule LifeOrg.EmbeddingsService do
       
       base_query = if workspace_id do
         from(t in base_query, where: t.workspace_id == ^workspace_id)
+      else
+        base_query
+      end
+      
+      # Apply date filtering if provided (use inserted_at for todos since they don't have entry_date)
+      base_query = if date_from do
+        {:ok, from_date} = Date.from_iso8601(date_from)
+        from(t in base_query, where: fragment("DATE(?)", t.inserted_at) >= ^from_date)
+      else
+        base_query
+      end
+      
+      base_query = if date_to do
+        {:ok, to_date} = Date.from_iso8601(date_to)
+        from(t in base_query, where: fragment("DATE(?)", t.inserted_at) <= ^to_date)
       else
         base_query
       end

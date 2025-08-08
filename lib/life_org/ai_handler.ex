@@ -1,6 +1,6 @@
 defmodule LifeOrg.AIHandler do
   import Ecto.Query
-  alias LifeOrg.{AnthropicClient, Repo, Todo, WorkspaceService}
+  alias LifeOrg.{AnthropicClient, EmbeddingsService, Repo, Todo, WorkspaceService}
 
   def process_message(message, journal_entries, todos, conversation_history \\ [], workspace_id) do
     IO.puts("Building system prompt...")
@@ -147,55 +147,66 @@ defmodule LifeOrg.AIHandler do
   end
   
   defp build_system_prompt(journal_entries, todos) do
-    recent_entries = Enum.take(journal_entries, 5)
-    entries_context = Enum.map_join(recent_entries, "\n\n", fn entry ->
-      "Date: #{Calendar.strftime(entry.inserted_at, "%B %d, %Y")}\nContent: #{entry.content}"
+    # Only include summary statistics and high-priority/current items to reduce token usage
+    # The AI can use search_content tool to find relevant detailed content as needed
+    
+    journal_count = length(journal_entries)
+    journal_summary = if journal_count > 0 do
+      most_recent = List.first(journal_entries)
+      recent_date = Calendar.strftime(most_recent.inserted_at, "%B %d, %Y")
+      "#{journal_count} journal entries available. Most recent: #{recent_date}"
+    else
+      "No journal entries yet."
+    end
+    
+    # Only show high priority todos and current/due soon items to reduce context
+    high_priority_todos = Enum.filter(todos, &(&1.priority == "high" and not &1.completed))
+    current_todos = Enum.filter(todos, &(&1.current and not &1.completed))
+    due_soon_todos = Enum.filter(todos, fn todo ->
+      case todo do
+        %{completed: false, due_date: %Date{} = due_date} ->
+          days_diff = Date.diff(due_date, Date.utc_today())
+          days_diff <= 3 && days_diff >= -1
+        _ -> 
+          false
+      end
     end)
     
-    # Get existing tags for context
+    priority_context = format_priority_todos(high_priority_todos ++ current_todos ++ due_soon_todos)
+    
+    # Basic statistics for context
+    total_todos = length(todos)
+    completed_todos = Enum.count(todos, & &1.completed)
+    pending_todos = total_todos - completed_todos
+    
+    todos_summary = "#{pending_todos} pending todos, #{completed_todos} completed"
+    
+    # Get existing tags for context (keep this as it's small and useful)
     existing_tags = get_unique_tags(todos)
     tags_context = case existing_tags do
       [] -> "No existing tags."
-      tags -> "Existing tags: " <> Enum.join(tags, ", ")
-    end
-    
-    todos_context = case todos do
-      [] -> "No current todos."
-      _ -> 
-        sorted_todos = Enum.sort_by(todos, &({&1.completed, &1.priority != "high"}))
-        Enum.map_join(sorted_todos, "\n", fn todo ->
-          status = if todo.completed, do: "✓ COMPLETED", else: "○ PENDING"
-          due_info = case {todo.due_date, todo.due_time} do
-            {nil, _} -> ""
-            {date, nil} -> " (Due: #{date})"
-            {date, time} -> " (Due: #{date} #{time})"
-          end
-          priority = String.upcase(todo.priority || "medium")
-          tags_info = case todo.tags do
-            nil -> ""
-            [] -> ""
-            tags -> " [Tags: " <> Enum.join(tags, ", ") <> "]"
-          end
-          "ID: #{todo.id} | #{status} [#{priority}] #{todo.title}#{due_info}#{tags_info}" <> 
-            if todo.description && String.trim(todo.description) != "", do: " - #{todo.description}", else: ""
-        end)
+      tags -> "Available tags: " <> Enum.join(Enum.take(tags, 15), ", ") <> if length(tags) > 15, do: "...", else: ""
     end
     
     """
-    You are a helpful life organization assistant. You have access to the user's journal entries and current todos. You can help them manage their tasks and reflect on their life.
+    You are a helpful life organization assistant. You can help users manage their tasks and reflect on their life using available tools.
     
-    Recent journal entries:
-    #{entries_context}
+    CONTENT OVERVIEW:
+    - Journal: #{journal_summary}
+    - Todos: #{todos_summary}
+    - #{tags_context}
     
-    Current todos:
-    #{todos_context}
+    HIGH PRIORITY & CURRENT ITEMS:
+    #{priority_context}
     
-    #{tags_context}
+    IMPORTANT: Use the search_content tool to find relevant journal entries or todos when you need specific context or past information. Don't guess about past content - search for it instead.
     
-    You have access to tools for managing todos and web search capabilities. Use these tools when:
+    You have access to tools for managing todos, semantic content search, and web search capabilities. Use these tools when:
     - The user asks you to create, update, complete, or delete tasks
+    - You need to find relevant journal entries or todos based on semantic similarity (use search_content tool)
     - You need current information from the internet to provide helpful advice or context
     - The user asks questions that require up-to-date information beyond your knowledge cutoff
+    - The user wants to find past entries or todos related to a specific topic or theme
     
     When creating todos, please suggest appropriate tags based on:
     - Existing tags that are relevant to the new task
@@ -209,7 +220,13 @@ defmodule LifeOrg.AIHandler do
     - Use `- [x]` for checked subtasks
     These will render as clickable checkboxes in the UI for easy progress tracking.
     
-    Be supportive, empathetic, and help the user organize their thoughts and tasks based on their journal entries. Use web search to provide current, relevant information when it would be helpful for their goals and tasks.
+    The search_content tool performs semantic vector similarity search across journal entries and todos. Use it to find relevant past content when:
+    - The user asks about previous discussions on a topic
+    - You need more context about similar situations or themes
+    - The user wants to see related journal entries or todos
+    - You need to understand patterns in their past activities
+    
+    Be supportive, empathetic, and help the user organize their thoughts and tasks based on their journal entries. Use both semantic search for finding relevant past context and web search for current, relevant information when it would be helpful for their goals and tasks.
     """
   end
   
@@ -222,6 +239,46 @@ defmodule LifeOrg.AIHandler do
         "type" => "web_search_20250305",
         "name" => "web_search",
         "max_uses" => 5
+      },
+      %{
+        "name" => "search_content",
+        "description" => "Search journal entries and todos using semantic vector similarity to find the most relevant content",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "query" => %{
+              "type" => "string",
+              "description" => "The search query text to find relevant content"
+            },
+            "content_type" => %{
+              "type" => "string",
+              "enum" => ["all", "journal", "todo"],
+              "description" => "Type of content to search: 'all' for both journal entries and todos, 'journal' for only journal entries, 'todo' for only todos"
+            },
+            "limit" => %{
+              "type" => "integer",
+              "minimum" => 1,
+              "maximum" => 20,
+              "description" => "Maximum number of results to return (default: 10)"
+            },
+            "date_from" => %{
+              "type" => "string",
+              "format" => "date",
+              "description" => "Optional start date filter in YYYY-MM-DD format"
+            },
+            "date_to" => %{
+              "type" => "string",
+              "format" => "date",
+              "description" => "Optional end date filter in YYYY-MM-DD format"
+            },
+            "todo_status" => %{
+              "type" => "string",
+              "enum" => ["all", "pending", "completed"],
+              "description" => "For todo searches: 'all' for all todos, 'pending' for uncompleted, 'completed' for completed todos"
+            }
+          },
+          "required" => ["query"]
+        }
       },
       %{
         "name" => "create_todo",
@@ -330,6 +387,17 @@ defmodule LifeOrg.AIHandler do
   
   defp convert_tool_use_to_action(tool_use, _todos, journal_entry_id \\ nil) do
     case tool_use.name do
+      "search_content" ->
+        %{
+          action: :search_content,
+          query: tool_use.input["query"],
+          content_type: tool_use.input["content_type"] || "all",
+          limit: tool_use.input["limit"] || 10,
+          date_from: tool_use.input["date_from"],
+          date_to: tool_use.input["date_to"],
+          todo_status: tool_use.input["todo_status"] || "all"
+        }
+        
       "create_todo" ->
         %{
           action: :create_todo,
@@ -383,6 +451,27 @@ defmodule LifeOrg.AIHandler do
     |> Enum.uniq()
     |> Enum.sort()
   end
+
+  defp format_priority_todos(todos) do
+    case Enum.uniq_by(todos, & &1.id) do
+      [] -> "No high priority, current, or due soon todos."
+      priority_todos ->
+        formatted = Enum.map_join(priority_todos, "\n", fn todo ->
+          status = if todo.completed, do: "✓", else: "○"
+          priority = String.upcase(todo.priority || "medium")
+          current_indicator = if todo.current, do: " [CURRENT]", else: ""
+          
+          due_info = case {todo.due_date, todo.due_time} do
+            {nil, _} -> ""
+            {date, nil} -> " (Due: #{date})"
+            {date, time} -> " (Due: #{date} #{time})"
+          end
+          
+          "#{status} [#{priority}] #{todo.title}#{current_indicator}#{due_info}"
+        end)
+        formatted
+    end
+  end
   
   def execute_tool_action(%{action: :create_todo} = params, workspace_id) do
     todo_attrs = %{
@@ -425,6 +514,36 @@ defmodule LifeOrg.AIHandler do
       nil -> {:error, "Todo not found"}
       todo ->
         WorkspaceService.delete_todo(todo)
+    end
+  end
+
+  def execute_tool_action(%{action: :search_content} = params, workspace_id) do
+    search_opts = [
+      workspace_id: workspace_id,
+      limit: params.limit
+    ]
+
+    # Apply date filtering if provided
+    search_opts = if params.date_from || params.date_to do
+      Keyword.put(search_opts, :date_from, params.date_from) |> Keyword.put(:date_to, params.date_to)
+    else
+      search_opts
+    end
+
+    # Apply todo status filtering if provided
+    search_opts = if params.todo_status && params.todo_status != "all" do
+      Keyword.put(search_opts, :todo_status, params.todo_status)
+    else
+      search_opts
+    end
+
+    case params.content_type do
+      "journal" ->
+        execute_journal_search(params.query, search_opts)
+      "todo" ->
+        execute_todo_search(params.query, search_opts)
+      _ -> # "all" or any other value
+        execute_combined_search(params.query, search_opts)
     end
   end
 
@@ -513,18 +632,14 @@ defmodule LifeOrg.AIHandler do
     # Format todo comments
     comments_context = format_todo_comments(todo_comments)
     
-    # Find related todos (by tags or keywords)
-    related_todos = find_related_todos(todo, all_todos)
-    related_context = format_related_todos(related_todos)
-    
     # Handle journal entries context with priority for originating entry
     entries_context = format_journal_entries_for_todo(todo, journal_entries)
     
-    # Get existing tags for context
+    # Get existing tags for context (limit to avoid token bloat)
     existing_tags = get_unique_tags(all_todos)
     tags_context = case existing_tags do
       [] -> "No existing tags."
-      tags -> "Available tags: " <> Enum.join(tags, ", ")
+      tags -> "Available tags: " <> Enum.join(Enum.take(tags, 15), ", ") <> if length(tags) > 15, do: "...", else: ""
     end
     
     """
@@ -536,10 +651,7 @@ defmodule LifeOrg.AIHandler do
     TODO COMMENTS & DISCUSSION:
     #{comments_context}
 
-    RELATED TODOS:
-    #{related_context}
-
-    RECENT LIFE CONTEXT:
+    LIFE CONTEXT:
     #{entries_context}
 
     #{tags_context}
@@ -551,6 +663,7 @@ defmodule LifeOrg.AIHandler do
     - Offering contextual advice based on journal entries and previous comments
     - Creating related or follow-up todos
     - Understanding progress and obstacles from the comment history
+    - Finding related past journal entries or todos using semantic search (search_content tool) - use this to discover patterns, similar tasks, or relevant context
     - Searching the web for current information, resources, or guidance related to the todo
 
     SUBTASK FORMATTING: When updating or creating todo descriptions with subtasks, you can use GitHub-style markdown checkboxes that will become interactive:
@@ -558,9 +671,9 @@ defmodule LifeOrg.AIHandler do
     - Use `- [x]` for checked subtasks
     These will render as clickable checkboxes in the UI for easy progress tracking.
 
-    You have access to web search capabilities to find current information, tutorials, best practices, or resources that would help complete this todo effectively. Use web search when it would provide valuable, up-to-date information for accomplishing the task.
+    You have access to both semantic search (search_content tool) and web search capabilities. Use semantic search to find relevant past journal entries or todos that might provide context, patterns, or related experiences. Use web search when you need current information, tutorials, best practices, or resources that would help complete this todo effectively.
 
-    Be supportive and provide actionable advice specific to this todo. Use the available tools when the user wants to modify the todo, create related tasks, or needs current information from the internet.
+    Be supportive and provide actionable advice specific to this todo. Use the available tools when the user wants to modify the todo, create related tasks, needs context from past activities, or requires current information from the internet.
     """
   end
 
@@ -603,89 +716,33 @@ defmodule LifeOrg.AIHandler do
     end
   end
 
-  defp find_related_todos(target_todo, all_todos) do
-    target_tags = target_todo.tags || []
-    
-    all_todos
-    |> Enum.filter(fn todo -> 
-      todo.id != target_todo.id && 
-      todo.tags != nil && 
-      length(todo.tags) > 0 &&
-      Enum.any?(todo.tags, fn tag -> tag in target_tags end)
-    end)
-    |> Enum.take(5) # Limit to 5 most relevant
-  end
 
-  defp format_related_todos(related_todos) do
-    case related_todos do
-      [] -> "No related todos found."
-      _ ->
-        formatted = Enum.map_join(related_todos, "\n", fn todo ->
-          status = if todo.completed, do: "✓", else: "○"
-          priority = String.upcase(todo.priority || "medium")
-          tags = if todo.tags, do: " [#{Enum.join(todo.tags, ", ")}]", else: ""
-          "#{status} [#{priority}] #{todo.title}#{tags}"
-        end)
-        "Related todos:\n#{formatted}"
-    end
-  end
-
-  defp format_journal_entries(entries) do
-    case entries do
-      [] -> "No recent journal entries."
-      _ ->
-        formatted = Enum.map_join(entries, "\n\n", fn entry ->
-          date = Calendar.strftime(entry.inserted_at, "%B %d, %Y")
-          "#{date}: #{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
-        end)
-        "Recent journal entries:\n#{formatted}"
-    end
-  end
 
   defp format_journal_entries_for_todo(todo, journal_entries) do
-    # Check if this todo has an originating journal entry
-    originating_entry = if todo.journal_entry_id do
-      # Find the originating entry in the provided entries or load it separately if needed
-      Enum.find(journal_entries, fn entry -> entry.id == todo.journal_entry_id end) ||
+    # Only include the originating journal entry if it exists, since AI can search for other relevant entries
+    if todo.journal_entry_id do
+      # Find the originating entry
+      originating_entry = Enum.find(journal_entries, fn entry -> entry.id == todo.journal_entry_id end) ||
         (Repo.get(LifeOrg.JournalEntry, todo.journal_entry_id))
+      
+      if originating_entry do
+        formatted_orig = format_single_journal_entry(originating_entry, true)
+        """
+        ORIGINATING JOURNAL ENTRY (this todo was created from this entry):
+        #{formatted_orig}
+        
+        Use search_content tool to find other relevant journal entries as needed.
+        """
+      else
+        "This todo was created from a journal entry, but it's not currently available. Use search_content tool to find relevant entries."
+      end
     else
-      nil
-    end
-
-    case {originating_entry, journal_entries} do
-      {nil, []} -> 
-        "No recent journal entries available."
-        
-      {nil, entries} ->
-        # No originating entry, show recent entries normally
-        recent_entries = Enum.take(entries, 3)
-        format_journal_entries(recent_entries)
-        
-      {orig_entry, entries} ->
-        # Prioritize originating entry, then show recent entries (excluding the originating one to avoid duplication)
-        other_entries = entries 
-        |> Enum.reject(fn entry -> entry.id == orig_entry.id end)
-        |> Enum.take(2) # Take 2 since we'll include the originating entry
-
-        formatted_orig = format_single_journal_entry(orig_entry, true)
-        
-        case other_entries do
-          [] ->
-            """
-            ORIGINATING JOURNAL ENTRY (this todo was created from this entry):
-            #{formatted_orig}
-            """
-            
-          _ ->
-            formatted_others = Enum.map_join(other_entries, "\n\n", &format_single_journal_entry(&1, false))
-            """
-            ORIGINATING JOURNAL ENTRY (this todo was created from this entry):
-            #{formatted_orig}
-
-            Other recent journal entries:
-            #{formatted_others}
-            """
-        end
+      journal_count = length(journal_entries)
+      if journal_count > 0 do
+        "#{journal_count} journal entries available. Use search_content tool to find entries relevant to this todo."
+      else
+        "No journal entries available."
+      end
     end
   end
 
@@ -710,6 +767,46 @@ defmodule LifeOrg.AIHandler do
         "type" => "web_search_20250305",
         "name" => "web_search",
         "max_uses" => 5
+      },
+      %{
+        "name" => "search_content",
+        "description" => "Search journal entries and todos using semantic vector similarity to find the most relevant content",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "query" => %{
+              "type" => "string",
+              "description" => "The search query text to find relevant content"
+            },
+            "content_type" => %{
+              "type" => "string",
+              "enum" => ["all", "journal", "todo"],
+              "description" => "Type of content to search: 'all' for both journal entries and todos, 'journal' for only journal entries, 'todo' for only todos"
+            },
+            "limit" => %{
+              "type" => "integer",
+              "minimum" => 1,
+              "maximum" => 20,
+              "description" => "Maximum number of results to return (default: 10)"
+            },
+            "date_from" => %{
+              "type" => "string",
+              "format" => "date",
+              "description" => "Optional start date filter in YYYY-MM-DD format"
+            },
+            "date_to" => %{
+              "type" => "string",
+              "format" => "date",
+              "description" => "Optional end date filter in YYYY-MM-DD format"
+            },
+            "todo_status" => %{
+              "type" => "string",
+              "enum" => ["all", "pending", "completed"],
+              "description" => "For todo searches: 'all' for all todos, 'pending' for uncompleted, 'completed' for completed todos"
+            }
+          },
+          "required" => ["query"]
+        }
       },
       %{
         "name" => "create_related_todo",
@@ -806,6 +903,17 @@ defmodule LifeOrg.AIHandler do
   defp convert_todo_tool_use_to_action(tool_use, current_todo, _all_todos) do
     
     result = case tool_use.name do
+      "search_content" ->
+        %{
+          action: :search_content,
+          query: tool_use.input["query"],
+          content_type: tool_use.input["content_type"] || "all",
+          limit: tool_use.input["limit"] || 10,
+          date_from: tool_use.input["date_from"],
+          date_to: tool_use.input["date_to"],
+          todo_status: tool_use.input["todo_status"] || "all"
+        }
+        
       "create_related_todo" ->
         %{
           action: :create_todo,
@@ -1026,6 +1134,160 @@ defmodule LifeOrg.AIHandler do
           "#{date}: #{comment.content}"
         end)
         "Comments:\n#{formatted_comments}"
+    end
+  end
+
+  defp execute_journal_search(query, opts) do
+    case EmbeddingsService.search_journal_entries(query, opts) do
+      {:ok, results} ->
+        formatted_results = format_journal_search_results(results)
+        {:ok, formatted_results}
+      
+      {:error, :no_api_key} ->
+        {:error, "Vector search is not available. OpenAI API key is not configured."}
+      
+      {:error, error} ->
+        {:error, "Search failed: #{inspect(error)}"}
+    end
+  end
+
+  defp execute_todo_search(query, opts) do
+    # Apply todo status filtering to the search results
+    case EmbeddingsService.search_todos(query, opts) do
+      {:ok, results} ->
+        filtered_results = apply_todo_status_filter(results, Keyword.get(opts, :todo_status, "all"))
+        formatted_results = format_todo_search_results(filtered_results)
+        {:ok, formatted_results}
+      
+      {:error, :no_api_key} ->
+        {:error, "Vector search is not available. OpenAI API key is not configured."}
+      
+      {:error, error} ->
+        {:error, "Search failed: #{inspect(error)}"}
+    end
+  end
+
+  defp execute_combined_search(query, opts) do
+    case EmbeddingsService.search_all(query, opts) do
+      {:ok, results} ->
+        # Apply todo status filtering to just the todo results
+        filtered_results = results
+        |> Enum.map(fn
+          {:todo, todo, _score} = result ->
+            todo_status = Keyword.get(opts, :todo_status, "all")
+            if should_include_todo_by_status(todo, todo_status) do
+              result
+            else
+              nil
+            end
+          result ->
+            result
+        end)
+        |> Enum.reject(&is_nil/1)
+        
+        formatted_results = format_combined_search_results(filtered_results)
+        {:ok, formatted_results}
+      
+      {:error, :no_api_key} ->
+        {:error, "Vector search is not available. OpenAI API key is not configured."}
+      
+      {:error, error} ->
+        {:error, "Search failed: #{inspect(error)}"}
+    end
+  end
+
+  defp apply_todo_status_filter(results, "all"), do: results
+  defp apply_todo_status_filter(results, status) do
+    Enum.filter(results, fn {todo, _score} ->
+      should_include_todo_by_status(todo, status)
+    end)
+  end
+
+  defp should_include_todo_by_status(todo, "completed"), do: todo.completed
+  defp should_include_todo_by_status(todo, "pending"), do: not todo.completed
+  defp should_include_todo_by_status(_todo, "all"), do: true
+
+  defp format_journal_search_results(results) do
+    if Enum.empty?(results) do
+      "No journal entries found matching your search query."
+    else
+      formatted = Enum.map_join(results, "\n\n", fn {entry, score} ->
+        date = Calendar.strftime(entry.entry_date || entry.inserted_at, "%B %d, %Y")
+        similarity = Float.round(score * 100, 1)
+        
+        """
+        [Journal Entry - #{date}] (#{similarity}% match)
+        #{String.slice(entry.content, 0, 300)}#{if String.length(entry.content) > 300, do: "...", else: ""}
+        """
+      end)
+      
+      "Found #{length(results)} journal entries:\n\n#{formatted}"
+    end
+  end
+
+  defp format_todo_search_results(results) do
+    if Enum.empty?(results) do
+      "No todos found matching your search query."
+    else
+      formatted = Enum.map_join(results, "\n\n", fn {todo, score} ->
+        similarity = Float.round(score * 100, 1)
+        status = if todo.completed, do: "✓ COMPLETED", else: "○ PENDING"
+        priority = String.upcase(todo.priority || "medium")
+        
+        due_info = case {todo.due_date, todo.due_time} do
+          {nil, _} -> ""
+          {date, nil} -> " | Due: #{date}"
+          {date, time} -> " | Due: #{date} at #{time}"
+        end
+        
+        tags_info = case todo.tags do
+          nil -> ""
+          [] -> ""
+          tags -> " | Tags: " <> Enum.join(tags, ", ")
+        end
+        
+        description = if todo.description && String.trim(todo.description) != "" do
+          "\nDescription: #{String.slice(todo.description, 0, 200)}#{if String.length(todo.description) > 200, do: "...", else: ""}"
+        else
+          ""
+        end
+        
+        """
+        [Todo ##{todo.id} - #{status}] (#{similarity}% match)
+        Title: #{todo.title} | Priority: #{priority}#{due_info}#{tags_info}#{description}
+        """
+      end)
+      
+      "Found #{length(results)} todos:\n\n#{formatted}"
+    end
+  end
+
+  defp format_combined_search_results(results) do
+    if Enum.empty?(results) do
+      "No content found matching your search query."
+    else
+      formatted = Enum.map_join(results, "\n\n", fn
+        {:journal_entry, entry, score} ->
+          date = Calendar.strftime(entry.entry_date || entry.inserted_at, "%B %d, %Y")
+          similarity = Float.round(score * 100, 1)
+          
+          """
+          📝 [Journal Entry - #{date}] (#{similarity}% match)
+          #{String.slice(entry.content, 0, 250)}#{if String.length(entry.content) > 250, do: "...", else: ""}
+          """
+          
+        {:todo, todo, score} ->
+          similarity = Float.round(score * 100, 1)
+          status = if todo.completed, do: "✓", else: "○"
+          priority = String.upcase(todo.priority || "medium")
+          
+          """
+          ✅ [Todo ##{todo.id} - #{status} #{priority}] (#{similarity}% match)
+          #{todo.title}#{if todo.description && String.trim(todo.description) != "", do: " - " <> String.slice(todo.description, 0, 150) <> (if String.length(todo.description || "") > 150, do: "...", else: ""), else: ""}
+          """
+      end)
+      
+      "Found #{length(results)} items:\n\n#{formatted}"
     end
   end
 end
