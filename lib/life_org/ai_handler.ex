@@ -3,25 +3,20 @@ defmodule LifeOrg.AIHandler do
   alias LifeOrg.{AnthropicClient, EmbeddingsService, Repo, Todo, WorkspaceService}
 
   def process_message(message, journal_entries, todos, conversation_history \\ [], workspace_id) do
-    IO.puts("Building system prompt...")
     system_prompt = build_system_prompt(journal_entries, todos)
-    IO.puts("System prompt built: #{String.length(system_prompt)} characters")
     
     # Define available tools
     tools = build_tools_definition(todos)
     
     # Combine conversation history with new message
     messages = conversation_history ++ [%{role: "user", content: message}]
-    IO.puts("Total messages in conversation: #{length(messages)}")
     
-    IO.puts("Sending message to Anthropic API with tools...")
     result = retry_with_backoff(fn ->
       AnthropicClient.send_message(messages, system_prompt, tools)
     end, max_retries: 2, retry_on: :timeout)
     
     case result do
       {:ok, response} ->
-        IO.puts("Got response from API: #{inspect(response)}")
         content_blocks = AnthropicClient.extract_content_from_response(response)
         
         # Extract text message and tool uses separately
@@ -37,12 +32,11 @@ defmodule LifeOrg.AIHandler do
         end
         
       {:error, error} ->
-        IO.puts("API error after retries: #{inspect(error)}")
         {:error, "Sorry, I encountered an error: #{error}"}
     end
   end
 
-  def extract_todos_from_journal(journal_content, existing_todos \\ [], journal_entry_id \\ nil) do
+  def extract_todos_from_journal(journal_content, existing_todos \\ [], journal_entry_id \\ nil, workspace_id \\ nil) do
     # Get existing tags for context
     existing_tags = get_unique_tags(existing_todos)
     tags_context = case existing_tags do
@@ -50,41 +44,70 @@ defmodule LifeOrg.AIHandler do
       tags -> "Existing tags: " <> Enum.join(tags, ", ")
     end
     
-    existing_todos_context = case existing_todos do
-      [] -> "No existing todos."
+    # Provide basic statistics about existing todos rather than full details
+    total_todos = length(existing_todos)
+    completed_todos = Enum.count(existing_todos, & &1.completed)
+    pending_todos = total_todos - completed_todos
+    
+    # Show only high-priority and current todos to reduce context
+    priority_todos = Enum.filter(existing_todos, &(&1.priority == "high" and not &1.completed))
+    current_todos = Enum.filter(existing_todos, &(&1.current and not &1.completed))
+    important_todos = (priority_todos ++ current_todos) |> Enum.uniq_by(& &1.id)
+    
+    important_todos_context = case important_todos do
+      [] -> "No high-priority or current todos."
       todos ->
-        todos
+        "High-priority and current todos:\n" <>
+        (todos
         |> Enum.map(fn todo ->
-          status = if todo.completed, do: "[COMPLETED]", else: "[PENDING]"
           tags_info = case todo.tags do
             nil -> ""
             [] -> ""
             tags -> " [Tags: " <> Enum.join(tags, ", ") <> "]"
           end
-          "#{status} ID: #{todo.id} | #{todo.title} (#{todo.priority})#{tags_info}" <>
+          current_marker = if todo.current, do: " [CURRENT]", else: ""
+          "ID: #{todo.id} | #{todo.title} (#{todo.priority})#{tags_info}#{current_marker}" <>
           if todo.description && String.trim(todo.description) != "", do: " - #{todo.description}", else: ""
         end)
-        |> Enum.join("\n")
+        |> Enum.join("\n"))
     end
 
     system_prompt = """
-    You are a helpful assistant that extracts actionable todos from journal entries.
+    You are an intelligent assistant that extracts actionable todos from journal entries with full awareness of the user's workspace history and patterns.
+
+    WORKSPACE OVERVIEW:
+    - Total todos: #{pending_todos} pending, #{completed_todos} completed
+    - #{tags_context}
     
-    EXISTING TODOS:
-    #{existing_todos_context}
+    #{important_todos_context}
+
+    ENHANCED TODO EXTRACTION PROCESS:
     
-    #{tags_context}
+    1. CONTEXTUAL DISCOVERY: First, use the search_content tool to find relevant past journal entries and todos related to the themes, topics, or projects mentioned in this journal entry. This will help you understand:
+       - Similar past tasks and their patterns
+       - Ongoing projects that this entry might relate to
+       - Historical completion patterns and priorities
+       - Related todos that might need updates
     
-    Create separate todos for each actionable task mentioned in the journal entry. Use multiple create_todo tool calls - one for each task.
+    2. INTELLIGENT TODO CREATION: Based on your search findings, create todos that:
+       - Avoid duplicating existing similar tasks (use semantic similarity, not just exact matches)
+       - Continue logical progressions from past entries
+       - Use appropriate tags based on historical patterns
+       - Set priorities informed by similar past tasks
+       - Include context from related past entries in descriptions
     
-    For each todo:
-    - Use a clear, descriptive title
-    - Set appropriate priority (high/medium/low)
-    - Add relevant tags for categorization
-    - Include description if the journal provides additional context
-    - For complex tasks with subtasks, you can include GitHub-style markdown checkboxes in the description (- [ ] unchecked, - [x] checked) that will become interactive in the UI
+    3. TODO RELATIONSHIP BUILDING: When appropriate, use update_todo to enhance existing todos with new context or complete_todo when the journal indicates task completion.
     
-    Only create new todos for tasks that don't already exist in the existing todos list above.
+    4. SMART DEDUPLICATION: Only create new todos for tasks that are genuinely new and don't semantically overlap with existing tasks.
+
+    For each todo you create:
+    - Use clear, descriptive titles that build on workspace patterns
+    - Set appropriate priority based on context and historical patterns
+    - Add relevant tags that connect to existing workspace taxonomy
+    - Include rich descriptions with context from related past entries
+    - For complex tasks, use GitHub-style markdown checkboxes (- [ ] unchecked, - [x] checked) for interactive subtasks
+    
+    IMPORTANT: Start by searching for relevant context before creating any todos. Use multiple search queries with different terms and approaches to build comprehensive context.
     """
     
     # Define tools for journal todo extraction
@@ -92,7 +115,7 @@ defmodule LifeOrg.AIHandler do
     
     messages = [%{role: "user", content: journal_content}]
     
-    # Attempt with retries on timeout errors
+    # Use the enhanced tool processing pipeline that can handle multiple rounds of tools
     result = retry_with_backoff(fn ->
       AnthropicClient.send_message(messages, system_prompt, tools)
     end, max_retries: 2, retry_on: :timeout)
@@ -102,14 +125,181 @@ defmodule LifeOrg.AIHandler do
         content_blocks = AnthropicClient.extract_content_from_response(response)
         tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
         
-        # Convert tool uses to our action format
-        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, existing_todos, journal_entry_id))
-        {:ok, tool_actions}
+        # If there are tool uses, we need to process them and continue the conversation
+        if length(tool_uses) > 0 do
+          execute_tools_and_extract_final_actions(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id)
+        else
+          # No tools used, just return empty actions
+          {:ok, []}
+        end
         
-      {:error, error} ->
-        IO.puts("AI error extracting todos after retries: #{inspect(error)}")
+      {:error, _error} ->
         {:ok, []}
     end
+  end
+
+  # Handle multi-round tool processing for journal todo extraction
+  defp execute_tools_and_extract_final_actions(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id) do
+    # Execute all tools and get their results
+    tool_results = Enum.map(tool_uses, fn tool_use ->
+      case execute_tool_action(%{
+        action: case tool_use.name do
+          "search_content" -> :search_content
+          "create_todo" -> :create_todo
+          "update_todo" -> :update_todo
+          "complete_todo" -> :complete_todo
+          "delete_todo" -> :delete_todo
+          "get_todo_by_id" -> :get_todo_by_id
+          _ -> :unknown
+        end
+      } |> Map.merge(convert_tool_params(tool_use)), workspace_id) do
+        {:ok, result} -> 
+          %{
+            "type" => "tool_result",
+            "tool_use_id" => tool_use.id,
+            "content" => format_tool_result({:ok, result}, tool_use.name)
+          }
+        {:error, error} ->
+          %{
+            "type" => "tool_result", 
+            "tool_use_id" => tool_use.id,
+            "content" => "Error: #{error}",
+            "is_error" => true
+          }
+      end
+    end)
+
+    # Continue the conversation with tool results
+    messages_with_assistant = messages ++ [%{role: "assistant", content: content_blocks}]
+    messages_with_tools = messages_with_assistant ++ [%{role: "user", content: tool_results}]
+
+    # Get the next response from AI
+    case retry_with_backoff(fn ->
+      AnthropicClient.send_message(messages_with_tools, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout) do
+      {:ok, response} ->
+        content_blocks = AnthropicClient.extract_content_from_response(response)
+        tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
+        
+        if length(tool_uses) > 0 do
+          # More tools to execute - recurse
+          execute_tools_and_extract_final_actions(messages_with_tools, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id)
+        else
+          # No more tools - extract final actions from previous tool results
+          extract_todo_actions_from_results(tool_results, existing_todos, journal_entry_id)
+        end
+        
+      {:error, _error} ->
+        # Fall back to extracting actions from current tool results
+        extract_todo_actions_from_results(tool_results, existing_todos, journal_entry_id)
+    end
+  end
+
+  defp convert_tool_params(tool_use) do
+    case tool_use.name do
+      "search_content" ->
+        %{
+          query: tool_use.input["query"],
+          content_type: tool_use.input["content_type"] || "all",
+          limit: tool_use.input["limit"] || 10,
+          date_from: tool_use.input["date_from"],
+          date_to: tool_use.input["date_to"],
+          todo_status: tool_use.input["todo_status"] || "all"
+        }
+      "create_todo" ->
+        %{
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          priority: tool_use.input["priority"] || "medium",
+          tags: tool_use.input["tags"] || []
+        }
+      "update_todo" ->
+        updates = %{}
+        |> maybe_add("title", tool_use.input["title"])
+        |> maybe_add("description", tool_use.input["description"])
+        |> maybe_add("priority", tool_use.input["priority"])
+        |> maybe_add("tags", tool_use.input["tags"])
+        
+        %{id: tool_use.input["id"], updates: updates}
+      "complete_todo" ->
+        %{id: tool_use.input["id"]}
+      "delete_todo" ->
+        %{id: tool_use.input["id"]}
+      "get_todo_by_id" ->
+        %{id_or_url: tool_use.input["id_or_url"]}
+      _ ->
+        %{}
+    end
+  end
+
+  defp format_tool_result(result, tool_name) do
+    case tool_name do
+      "search_content" ->
+        case result do
+          {:ok, formatted_string} when is_binary(formatted_string) ->
+            formatted_string
+          {:ok, []} ->
+            "No relevant content found."
+          {:ok, results} when is_list(results) ->
+            formatted_results = Enum.map(results, fn 
+              {:journal_entry, entry, score} ->
+                date = Calendar.strftime(entry.entry_date || entry.inserted_at, "%B %d, %Y")
+                "Journal Entry (#{date}, similarity: #{Float.round(score, 3)}): #{String.slice(entry.content, 0, 200)}#{if String.length(entry.content) > 200, do: "...", else: ""}"
+              {:todo, todo, score} ->
+                status = if todo.completed, do: "COMPLETED", else: "PENDING"
+                "Todo (#{status}, similarity: #{Float.round(score, 3)}): #{todo.title}#{if todo.description && String.trim(todo.description) != "", do: " - #{todo.description}", else: ""}"
+            end)
+            "Found #{length(results)} relevant items:\n" <> Enum.join(formatted_results, "\n")
+          error ->
+            "Search failed: #{inspect(error)}"
+        end
+      "create_todo" ->
+        case result do
+          {:ok, %Todo{} = todo} -> "Successfully created todo: #{todo.title} (ID: #{todo.id})"
+          {:ok, todo} -> "Created todo: #{inspect(todo)}"
+          {:error, %Ecto.Changeset{} = changeset} -> 
+            errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+              Enum.reduce(opts, msg, fn {key, value}, acc ->
+                String.replace(acc, "%{#{key}}", to_string(value))
+              end)
+            end)
+            "Failed to create todo: #{inspect(errors)}"
+          {:error, error} -> "Failed to create todo: #{inspect(error)}"
+          error -> "Unexpected result: #{inspect(error)}"
+        end
+      "update_todo" ->
+        case result do
+          {:ok, %Todo{} = todo} -> "Successfully updated todo: #{todo.title} (ID: #{todo.id})"
+          {:ok, todo} -> "Updated todo: #{inspect(todo)}"
+          {:error, %Ecto.Changeset{} = changeset} -> 
+            errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+              Enum.reduce(opts, msg, fn {key, value}, acc ->
+                String.replace(acc, "%{#{key}}", to_string(value))
+              end)
+            end)
+            "Failed to update todo: #{inspect(errors)}"
+          {:error, error} -> "Failed to update todo: #{inspect(error)}"
+          error -> "Unexpected result: #{inspect(error)}"
+        end
+      "complete_todo" ->
+        case result do
+          {:ok, %Todo{} = todo} -> "Successfully completed todo: #{todo.title} (ID: #{todo.id})"
+          {:ok, todo} -> "Completed todo: #{inspect(todo)}"
+          {:error, error} -> "Failed to complete todo: #{inspect(error)}"
+          error -> "Unexpected result: #{inspect(error)}"
+        end
+      _ ->
+        inspect(result)
+    end
+  end
+
+  defp extract_todo_actions_from_results(_tool_results, _existing_todos, _journal_entry_id) do
+    # For the journal extraction pipeline, we need to return empty actions since
+    # the AI has already executed the tools directly. The UI will be updated
+    # through other mechanisms.
+    # TODO: In the future, we might want to track which todos were created/updated
+    # during this process for better UI feedback
+    {:ok, []}
   end
   
   # Helper function to retry API calls with exponential backoff
@@ -125,7 +315,6 @@ defmodule LifeOrg.AIHandler do
       {:error, %Req.TransportError{reason: :timeout}} when attempt < max_retries and retry_on == :timeout ->
         # Calculate backoff delay (exponential backoff with base of 2 seconds)
         delay = round(:timer.seconds(2) * :math.pow(2, attempt))
-        IO.puts("Timeout error on attempt #{attempt + 1}, retrying in #{delay}ms...")
         Process.sleep(delay)
         do_retry(fun, attempt + 1, max_retries, retry_on)
         
@@ -133,7 +322,6 @@ defmodule LifeOrg.AIHandler do
         # Also handle string-formatted network errors that might contain timeout info
         if String.contains?(rest, "timeout") and retry_on == :timeout do
           delay = round(:timer.seconds(2) * :math.pow(2, attempt))
-          IO.puts("Network timeout error on attempt #{attempt + 1}, retrying in #{delay}ms...")
           Process.sleep(delay)
           do_retry(fun, attempt + 1, max_retries, retry_on)
         else
@@ -442,6 +630,15 @@ defmodule LifeOrg.AIHandler do
   end
   
   defp maybe_add(map, _key, value) when value == "" or is_nil(value), do: map
+  defp maybe_add(map, "tags", value) when is_list(value) do
+    # Ensure all tags are strings
+    tags = Enum.map(value, &to_string/1)
+    Map.put(map, "tags", tags)
+  end
+  defp maybe_add(map, "tags", value) when not is_nil(value) do
+    # Convert single tag to list
+    Map.put(map, "tags", [to_string(value)])
+  end
   defp maybe_add(map, key, value) when is_list(value) and value != [], do: Map.put(map, key, value)
   defp maybe_add(map, key, value), do: Map.put(map, key, value)
   
@@ -474,11 +671,19 @@ defmodule LifeOrg.AIHandler do
   end
   
   def execute_tool_action(%{action: :create_todo} = params, workspace_id) do
+    # Ensure tags is always a list of strings
+    tags = case params.tags do
+      nil -> []
+      [] -> []
+      tags when is_list(tags) -> Enum.map(tags, &to_string/1)
+      tags -> [to_string(tags)]
+    end
+    
     todo_attrs = %{
       "title" => params.title,
       "description" => params.description,
       "priority" => params.priority,
-      "tags" => params.tags || [],
+      "tags" => tags,
       "ai_generated" => true
     }
     
@@ -578,25 +783,20 @@ defmodule LifeOrg.AIHandler do
   end
 
   def process_todo_message(message, todo, todo_comments, all_todos, journal_entries, conversation_history \\ [], workspace_id) do
-    IO.puts("Building todo-specific system prompt...")
     system_prompt = build_todo_system_prompt(todo, todo_comments, all_todos, journal_entries)
-    IO.puts("Todo system prompt built: #{String.length(system_prompt)} characters")
     
     # Define available tools for todo conversations
     tools = build_todo_tools_definition(todo, all_todos)
     
     # Combine conversation history with new message
     messages = conversation_history ++ [%{role: "user", content: message}]
-    IO.puts("Total messages in todo conversation: #{length(messages)}")
     
-    IO.puts("Sending todo message to Anthropic API...")
     result = retry_with_backoff(fn ->
       AnthropicClient.send_message(messages, system_prompt, tools)
     end, max_retries: 2, retry_on: :timeout)
     
     case result do
       {:ok, response} ->
-        IO.puts("Got response from API: #{inspect(response)}")
         content_blocks = AnthropicClient.extract_content_from_response(response)
         # Extract text message and tool uses separately
         assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
@@ -605,13 +805,10 @@ defmodule LifeOrg.AIHandler do
         
         # If there are tool uses, execute them and get final response
         if length(tool_uses) > 0 do
-          IO.puts("Found #{length(tool_uses)} tool uses, executing...")
           try do
             execute_todo_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, todo, all_todos)
           rescue
             error ->
-              IO.puts("Error in execute_todo_tools_and_continue: #{inspect(error)}")
-              IO.puts("Stacktrace: #{Exception.format_stacktrace(__STACKTRACE__)}")
               {:error, "Tool execution failed: #{inspect(error)}"}
           end
         else
@@ -620,7 +817,6 @@ defmodule LifeOrg.AIHandler do
         end
         
       {:error, error} ->
-        IO.puts("API error after retries: #{inspect(error)}")
         {:error, "Sorry, I encountered an error: #{error}"}
     end
   end
@@ -956,11 +1152,8 @@ defmodule LifeOrg.AIHandler do
   end
 
   defp execute_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id) do
-    IO.puts("Executing #{length(tool_uses)} tools...")
-    
     # Execute each tool and collect results
     tool_results = Enum.map(tool_uses, fn tool_use ->
-      IO.puts("Executing tool: #{tool_use.name}")
       
       # Convert to action and execute
       action = convert_tool_use_to_action(tool_use, [], nil)
@@ -986,14 +1179,12 @@ defmodule LifeOrg.AIHandler do
     # Continue conversation with tool results
     updated_messages = messages ++ [assistant_message_with_tools] ++ tool_results
     
-    IO.puts("Sending tool results back to API...")
     result = retry_with_backoff(fn ->
       AnthropicClient.send_message(updated_messages, system_prompt, tools)
     end, max_retries: 2, retry_on: :timeout)
     
     case result do
       {:ok, final_response} ->
-        IO.puts("Got final response from API")
         final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
         final_message = AnthropicClient.extract_text_from_content(final_content_blocks)
         
@@ -1003,7 +1194,6 @@ defmodule LifeOrg.AIHandler do
         {:ok, final_message, tool_actions}
         
       {:error, error} ->
-        IO.puts("Error getting final response: #{inspect(error)}")
         {:error, "Sorry, I encountered an error processing the tool results: #{error}"}
     end
   end

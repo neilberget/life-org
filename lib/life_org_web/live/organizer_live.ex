@@ -117,7 +117,7 @@ defmodule LifeOrgWeb.OrganizerLive do
 
         Task.start(fn ->
           {:ok, todo_actions} =
-            AIHandler.extract_todos_from_journal(entry.content, existing_todos, entry.id)
+            AIHandler.extract_todos_from_journal(entry.content, existing_todos, entry.id, workspace_id)
 
           send(parent_pid, {:extracted_todos, todo_actions, workspace_id})
         end)
@@ -608,8 +608,6 @@ defmodule LifeOrgWeb.OrganizerLive do
 
     Task.start(fn ->
       try do
-        IO.puts("Starting AI request...")
-
         case AIHandler.process_message(
                message,
                socket.assigns.journal_entries,
@@ -618,17 +616,14 @@ defmodule LifeOrgWeb.OrganizerLive do
                socket.assigns.current_workspace.id
              ) do
           {:ok, response, tool_actions} ->
-            IO.puts("AI response received: #{inspect(response)}")
             send(parent_pid, {:ai_response, response, tool_actions, conversation.id})
 
           {:error, error} ->
-            IO.puts("AI error: #{inspect(error)}")
             send(parent_pid, {:ai_error, error})
         end
       rescue
-        error ->
-          IO.puts("Task error: #{inspect(error)}")
-          send(parent_pid, {:ai_error, "Unexpected error: #{inspect(error)}"})
+        _error ->
+          send(parent_pid, {:ai_error, "Unexpected error occurred"})
       end
     end)
 
@@ -1149,8 +1144,6 @@ defmodule LifeOrgWeb.OrganizerLive do
 
     Task.start(fn ->
       try do
-        IO.puts("Starting todo-specific AI request...")
-
         case AIHandler.process_todo_message(
                message,
                todo,
@@ -1161,21 +1154,16 @@ defmodule LifeOrgWeb.OrganizerLive do
                workspace_id
              ) do
           {:ok, response, tool_actions} ->
-            IO.puts("Todo AI response received: #{inspect(response)}")
-
             send(
               parent_pid,
               {:todo_ai_response, response, tool_actions, conversation.id, todo_id_int}
             )
 
           {:error, error} ->
-            IO.puts("Todo AI error: #{inspect(error)}")
             send(parent_pid, {:todo_ai_error, error, conversation.id, todo_id_int})
         end
       rescue
-        error ->
-          IO.puts("Todo AI task error: #{inspect(error)}")
-
+        _error ->
           send(
             parent_pid,
             {:todo_ai_error, "Unexpected error occurred", conversation.id, todo_id_int}
@@ -1361,7 +1349,6 @@ defmodule LifeOrgWeb.OrganizerLive do
 
     # Execute tool actions for UI updates (tools were already executed in AI handler)
     if length(tool_actions) > 0 do
-      IO.puts("Updating UI for #{length(tool_actions)} todo tool actions...")
       updated_socket = execute_todo_tool_actions_for_ui(socket, tool_actions, todo_id)
       {:noreply, updated_socket}
     else
@@ -1388,61 +1375,87 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_info({:extracted_todos, todo_actions, workspace_id}, socket) do
     # Only process if we're still in the same workspace
-    if socket.assigns.current_workspace.id == workspace_id and length(todo_actions) > 0 do
-      # Process all actions and separate new vs updated todos
-      {created_todos, updated_todos} =
-        Enum.reduce(todo_actions, {[], socket.assigns.todos}, fn action, {new_acc, todos_acc} ->
-          case AIHandler.execute_tool_action(action, workspace_id) do
-            {:ok, todo} when action.action == :create_todo ->
-              # Preload journal_entry for new todos (especially important since these are created from journal entries)
-              todo_with_journal = Repo.preload(todo, :journal_entry)
-              {[todo_with_journal | new_acc], todos_acc}
-
-            {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
-              # Preload journal_entry for updated todos
-              todo_with_journal = Repo.preload(updated_todo, :journal_entry)
-              updated_todos_list = update_todo_in_list(todos_acc, todo_with_journal)
-              {new_acc, updated_todos_list}
-
-            {:ok, _deleted_todo} when action.action == :delete_todo ->
-              updated_todos_list = remove_todo_from_list(todos_acc, action.id)
-              {new_acc, updated_todos_list}
-
-            _ ->
-              {new_acc, todos_acc}
-          end
+    if socket.assigns.current_workspace.id == workspace_id do
+      # If no actions are returned, the enhanced pipeline may have created todos directly
+      # In this case, refresh the todos list from the database
+      if length(todo_actions) == 0 do
+        # Refresh todos from database in case they were created directly by the AI pipeline
+        updated_todos = WorkspaceService.list_todos(workspace_id) |> sort_todos()
+        
+        # Check if any new todos were actually created by comparing with current list
+        current_todo_ids = Enum.map(socket.assigns.todos, & &1.id) |> MapSet.new()
+        new_todos = Enum.filter(updated_todos, fn todo -> 
+          not MapSet.member?(current_todo_ids, todo.id) and todo.ai_generated
         end)
-
-      # Generate appropriate flash message
-      flash_message =
-        case {length(created_todos), length(todo_actions) - length(created_todos)} do
-          {0, 0} ->
-            nil
-
-          {new_count, 0} ->
-            "Found #{new_count} new todo(s) from your journal entry!"
-
-          {0, updated_count} ->
-            "Updated #{updated_count} existing todo(s) based on your journal entry!"
-
-          {new_count, updated_count} ->
-            "Found #{new_count} new todo(s) and updated #{updated_count} existing todo(s)!"
+        
+        flash_message = case length(new_todos) do
+          0 -> "No new todos extracted from journal entry."
+          1 -> "1 todo extracted from journal entry."
+          n -> "#{n} todos extracted from journal entry."
         end
-
-      socket =
-        socket
-        |> assign(:todos, sort_todos(updated_todos))
-        |> assign(:processing_journal_todos, false)
-        |> (fn s ->
-              if length(created_todos) > 0,
-                do: assign(s, :incoming_todos, sort_todos(created_todos)),
-                else: s
-            end).()
-
-      if flash_message do
-        {:noreply, put_flash(socket, :info, flash_message)}
+        
+        {:noreply,
+         socket
+         |> assign(:todos, updated_todos)
+         |> assign(:processing_journal_todos, false)
+         |> put_flash(:info, flash_message)}
       else
-        {:noreply, socket}
+        # Original logic for when actions are returned
+        # Process all actions and separate new vs updated todos
+        {created_todos, updated_todos} =
+          Enum.reduce(todo_actions, {[], socket.assigns.todos}, fn action, {new_acc, todos_acc} ->
+            case AIHandler.execute_tool_action(action, workspace_id) do
+              {:ok, todo} when action.action == :create_todo ->
+                # Preload journal_entry for new todos (especially important since these are created from journal entries)
+                todo_with_journal = Repo.preload(todo, :journal_entry)
+                {[todo_with_journal | new_acc], todos_acc}
+
+              {:ok, updated_todo} when action.action in [:update_todo, :complete_todo] ->
+                # Preload journal_entry for updated todos
+                todo_with_journal = Repo.preload(updated_todo, :journal_entry)
+                updated_todos_list = update_todo_in_list(todos_acc, todo_with_journal)
+                {new_acc, updated_todos_list}
+
+              {:ok, _deleted_todo} when action.action == :delete_todo ->
+                updated_todos_list = remove_todo_from_list(todos_acc, action.id)
+                {new_acc, updated_todos_list}
+
+              _ ->
+                {new_acc, todos_acc}
+            end
+          end)
+
+        # Generate appropriate flash message
+        flash_message =
+          case {length(created_todos), length(todo_actions) - length(created_todos)} do
+            {0, 0} ->
+              nil
+
+            {new_count, 0} ->
+              "Found #{new_count} new todo(s) from your journal entry!"
+
+            {0, updated_count} ->
+              "Updated #{updated_count} existing todo(s) based on your journal entry!"
+
+            {new_count, updated_count} ->
+              "Found #{new_count} new todo(s) and updated #{updated_count} existing todo(s)!"
+          end
+
+        socket =
+          socket
+          |> assign(:todos, sort_todos(updated_todos))
+          |> assign(:processing_journal_todos, false)
+          |> (fn s ->
+                if length(created_todos) > 0,
+                  do: assign(s, :incoming_todos, sort_todos(created_todos)),
+                  else: s
+              end).()
+
+        if flash_message do
+          {:noreply, put_flash(socket, :info, flash_message)}
+        else
+          {:noreply, socket}
+        end
       end
     else
       {:noreply, assign(socket, :processing_journal_todos, false)}

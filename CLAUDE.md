@@ -452,3 +452,38 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Migration Pattern**: When updating constraints in MySQL, use `drop constraint` followed by `modify` (MySQL doesn't support `drop_if_exists` for constraints)
 - **Constraint Names**: Follow pattern `{table}_{column}_fkey` (e.g., `chat_messages_conversation_id_fkey`)
 - **WorkspaceService**: Relies on database-level cascading rather than manual deletion queries for efficiency
+
+## Enhanced Journal-to-Todos Pipeline
+
+The journal extraction system was enhanced with **vector search integration** to create more sophisticated, context-aware todo extraction.
+
+### Pipeline Architecture
+- **Multi-Round Tool Processing**: `execute_tools_and_extract_final_actions/8` handles AI responses that require multiple rounds of tool execution
+- **Context Discovery Phase**: AI first uses `search_content` tool to find semantically similar past entries and todos before creating new todos
+- **Pattern Recognition**: System analyzes historical completion patterns, priorities, and relationships for better todo creation
+- **Smart Deduplication**: Uses semantic similarity rather than exact string matching to avoid duplicate todos
+
+### Key Implementation Details
+- **Tool Result Processing**: Enhanced `format_tool_result/2` to handle search results, todo creation/updates, and Ecto.Changeset errors
+- **Error Handling**: Robust handling of changeset validation errors with proper error message formatting using `Ecto.Changeset.traverse_errors`
+- **Tags Validation**: Ensures tags are always converted to string lists to prevent validation failures
+- **Multi-Phase Extraction**: AI can execute search tools, then create todos based on discovered context, then potentially execute more tools
+
+### System Prompt Enhancement
+- **Context-Aware Instructions**: AI receives detailed instructions on using search tools before creating todos
+- **Historical Pattern Analysis**: Prompts guide AI to consider past patterns, priorities, and tag usage
+- **Relationship Building**: Encourages AI to update existing todos and create related todos when appropriate
+- **Deduplication Strategy**: Instructs AI to use semantic similarity, not just exact matches, for avoiding duplicates
+
+### Error Patterns & Solutions
+- **"Search error:" Formatting**: Fixed tool result formatting to distinguish between actual errors and successful results
+- **Changeset Validation Errors**: Added proper handling for Ecto.Changeset protocol errors with meaningful error messages
+- **Tags Type Safety**: Ensured tags are always strings to prevent JSON serialization issues
+- **Empty Actions Handling**: System properly handles cases where AI executes tools directly without returning explicit actions
+
+### Performance Considerations
+- **Background Processing**: All AI processing remains asynchronous to avoid blocking UI
+- **UI State Management**: LiveView assigns are updated based on database changes rather than relying solely on returned actions
+- **Tool Execution Caching**: Results from search tools are formatted and cached for the AI conversation context
+
+This enhanced pipeline creates significantly more comprehensive and contextually relevant todos by leveraging the full workspace history through semantic search, while maintaining robust error handling and performance characteristics.
