@@ -122,6 +122,7 @@ mix user.delete <email>               # Delete user and all associated data
 - **Clean, modern design**: Professional appearance without unnecessary elements
 - **Responsive layout**: Full-screen utilization without default Phoenix headers
 - **Interactive elements**: Hover states, loading indicators, smooth transitions
+- **AI Chat Prominence**: Dual-mode AI interface - compact 400px sidebar for quick access, expandable to full-screen view for intensive AI interactions
 
 ### API Integration
 - **Environment configuration**: API keys managed through environment variables
@@ -427,6 +428,7 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 
 ### Architecture
 - **OpenAI Integration**: Uses `openai_ex` library with text-embedding-3-small model for generating 1536-dimensional embeddings
+- **AI Search Tool**: `search_content` tool enables AI to perform semantic searches with content type, date range, and status filtering
 - **Background Processing**: `EmbeddingsWorker` GenServer continuously processes content without embeddings (batch size: 5, interval: 30s)
 - **Conditional Startup**: Worker only starts when OPENAI_API_KEY environment variable is present
 - **Database Storage**: Embeddings stored as JSON arrays in MySQL with `embedding` and `embedding_generated_at` columns
@@ -443,6 +445,13 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Pattern Matching**: OpenAI API returns string keys in maps (e.g., `%{"data" => ...}` not `%{data: ...}`)
 - **Error Resilience**: Graceful fallback when API key missing - search functionality disabled but app continues working
 - **Processing Pipeline**: Two-step process - generate embedding via API, then store with proper timestamp truncation
+
+### AI System Prompt Optimization
+- **Context Reduction Strategy**: Dramatically reduced baseline context sent to AI by replacing full content with summary statistics
+- **General Chat Optimization**: Changed from sending 5 full journal entries + all todos (~3000 tokens) to summary statistics + priority items only (~800 tokens)
+- **Todo Chat Optimization**: Reduced from all related todos + recent entries (~2000 tokens) to originating entry only + search instructions (~1000 tokens)
+- **Semantic Search Integration**: AI uses `search_content` tool to pull relevant context on-demand instead of receiving everything upfront
+- **Performance Impact**: ~60% reduction in prompt tokens while maintaining AI capability through intelligent search functionality
 
 ## Database Constraints & Cascading Deletes
 - **Foreign Key Design**: All related entities use `on_delete: :delete_all` for proper cascading

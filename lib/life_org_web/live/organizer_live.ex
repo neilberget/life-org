@@ -86,6 +86,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:todo_conversations, [])
      |> assign(:current_todo_conversation, nil)
      |> assign(:layout_expanded, nil)
+     |> assign(:ai_chat_expanded, false)
      |> assign(:checkbox_update_trigger, 0)
      |> assign(:deleting_todo_id, nil)
      |> assign(:search_query, "")
@@ -766,28 +767,51 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("toggle_ai_sidebar", _params, socket) do
-    # When opening sidebar, default to conversations view unless we're in an active chat
-    new_view =
-      if !socket.assigns.show_ai_sidebar and length(socket.assigns.chat_messages) == 0 do
-        :conversations
-      else
-        socket.assigns.ai_sidebar_view
-      end
-
-    {:noreply,
-     socket
-     |> assign(:show_ai_sidebar, !socket.assigns.show_ai_sidebar)
-     |> assign(:ai_sidebar_view, new_view)}
+    # Always open in expanded mode
+    if socket.assigns.ai_chat_expanded do
+      # If expanded, close it
+      {:noreply,
+       socket
+       |> assign(:ai_chat_expanded, false)
+       |> assign(:show_ai_sidebar, false)}
+    else
+      # Open in expanded mode, default to conversations view unless we're in an active chat
+      new_view =
+        if length(socket.assigns.chat_messages) == 0 do
+          :conversations
+        else
+          :chat
+        end
+      {:noreply,
+       socket
+       |> assign(:ai_chat_expanded, true)
+       |> assign(:show_ai_sidebar, false)
+       |> assign(:ai_sidebar_view, new_view)}
+    end
   end
 
   @impl true
   def handle_event("ai_sidebar_show_conversations", _params, socket) do
-    {:noreply, assign(socket, :ai_sidebar_view, :conversations)}
+    {:noreply,
+     socket
+     |> assign(:ai_sidebar_view, :conversations)
+     |> assign(:show_ai_sidebar, false)
+     |> assign(:ai_chat_expanded, true)}
   end
 
   @impl true
   def handle_event("ai_sidebar_show_chat", _params, socket) do
-    {:noreply, assign(socket, :ai_sidebar_view, :chat)}
+    {:noreply,
+     socket
+     |> assign(:ai_sidebar_view, :chat)
+     |> assign(:show_ai_sidebar, false)
+     |> assign(:ai_chat_expanded, true)}
+  end
+
+  @impl true
+  def handle_event("toggle_ai_chat_expanded", _params, socket) do
+    # This handler is now the same as toggle_ai_sidebar since we always use expanded mode
+    handle_event("toggle_ai_sidebar", %{}, socket)
   end
 
   @impl true

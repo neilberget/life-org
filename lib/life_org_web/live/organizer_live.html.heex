@@ -208,7 +208,24 @@
 
   <!-- Main Content -->
   <div class="flex flex-1 overflow-hidden relative">
-    <%= if @layout_expanded == :journal do %>
+    <%= if @ai_chat_expanded do %>
+      <!-- Expanded AI View -->
+      <div class="w-full bg-white overflow-y-auto">
+        <%= if @ai_sidebar_view == :conversations do %>
+          <ChatComponent.expanded_conversation_view 
+            conversations={@conversations}
+            tag_filter={@tag_filter}
+          />
+        <% else %>
+          <ChatComponent.expanded_chat_view 
+            messages={@chat_messages} 
+            current_conversation={@current_conversation}
+            tag_filter={@tag_filter}
+          />
+        <% end %>
+      </div>
+    <% else %>
+      <%= if @layout_expanded == :journal do %>
       <!-- Expanded Journal View -->
       <div class="w-full bg-white overflow-y-auto" phx-hook="ClearJournalForm" id="journal-column">
         <div class="p-6">
@@ -357,36 +374,41 @@
         />
       <% end %>
     <% end %>
+    <% end %>
     
     <!-- Floating AI Chat Button -->
-    <button
-      phx-click="toggle_ai_sidebar"
-      class="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all duration-200 flex items-center justify-center z-40"
-      title="Toggle AI Assistant"
-    >
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-      </svg>
-    </button>
+    <%= unless @ai_chat_expanded do %>
+      <button
+        phx-click="toggle_ai_sidebar"
+        class="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all duration-200 flex items-center justify-center z-40"
+        title="Toggle AI Assistant"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+        </svg>
+      </button>
+    <% end %>
     
     <!-- AI Assistant Sidebar -->
-    <div class={"fixed top-0 right-0 h-full bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-50 #{if @show_ai_sidebar, do: "translate-x-0", else: "translate-x-full"}"} style="width: 400px;">
-      <ChatComponent.ai_sidebar 
-        messages={@chat_messages} 
-        conversations={@conversations}
-        current_conversation={@current_conversation}
-        show={@show_ai_sidebar}
-        view={@ai_sidebar_view}
-        tag_filter={@tag_filter}
-      />
-    </div>
-    
-    <!-- Sidebar Overlay -->
-    <%= if @show_ai_sidebar do %>
-      <div 
-        class="fixed inset-0 bg-black bg-opacity-50 z-40" 
-        phx-click="toggle_ai_sidebar"
-      ></div>
+    <%= unless @ai_chat_expanded do %>
+      <div class={"fixed top-0 right-0 h-full bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-50 #{if @show_ai_sidebar, do: "translate-x-0", else: "translate-x-full"}"} style="width: 400px;">
+        <ChatComponent.ai_sidebar 
+          messages={@chat_messages} 
+          conversations={@conversations}
+          current_conversation={@current_conversation}
+          show={@show_ai_sidebar}
+          view={@ai_sidebar_view}
+          tag_filter={@tag_filter}
+        />
+      </div>
+      
+      <!-- Sidebar Overlay -->
+      <%= if @show_ai_sidebar do %>
+        <div 
+          class="fixed inset-0 bg-black bg-opacity-50 z-40" 
+          phx-click="toggle_ai_sidebar"
+        ></div>
+      <% end %>
     <% end %>
   </div>
 </div>
