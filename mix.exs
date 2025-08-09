@@ -65,6 +65,7 @@ defmodule LifeOrg.MixProject do
       {:cors_plug, "~> 3.0"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_github, "~> 0.8"},
+      {:ueberauth_asana, "~> 0.1"},
       {:dotenvy, "~> 0.8"},
       {:number, "~> 1.0"},
       {:tidewave, "~> 0.2", only: :dev},

@@ -310,35 +310,27 @@ The application includes a **comprehensive integration system** that automatical
 - **Link Detection**: `LifeOrg.LinkDetector` extracts URLs from text content using regex patterns
 - **Decorator Pipeline**: `LifeOrg.Decorators.Pipeline` processes content asynchronously to inject link previews
 
-### OAuth2 Authentication System (Phase 3 Complete)
-- **Ueberauth Integration**: Uses ueberauth and ueberauth_github for OAuth2 flows
+### OAuth2 Authentication System
+- **Ueberauth Integration**: Uses ueberauth with provider-specific strategies (GitHub, Asana)
 - **Global User Integrations**: Auth tokens work across all workspaces (no re-authentication needed)
 - **Secure Token Storage**: UserIntegration model stores encrypted credentials and metadata
-- **GitHub OAuth2**: Supports private repository access with proper scope management
 - **Environment Variables**: Project-specific .env file support using Dotenvy
 - **Integration Settings UI**: Web interface for connecting/disconnecting OAuth2 accounts
+- **Provider Support**: GitHub (private repos), Asana (tasks/projects), with extensible framework for more
 
-### GitHub Decorator (Platform Integration)
-- **Repository Previews**: Rich cards for GitHub repositories with stars, language, and description
-- **Issue/PR Support**: Detailed previews for GitHub issues and pull requests with status badges
-- **Private Repository Access**: Uses OAuth2 tokens to access private GitHub repositories
-- **Priority-Based Matching**: Higher priority (10) than generic web decorator for GitHub URLs
-- **API Rate Limiting**: Proper error handling for GitHub API limits and authentication failures
-
-### Web Link Decorator (Phase 2 Complete)
-- **Generic Web Link Support**: Fetches Open Graph, Twitter Card, and standard HTML metadata
-- **Caching Layer**: `LifeOrg.LinkFetcher` GenServer provides HTTP fetching with MySQL-backed caching
-- **Rich Previews**: Displays title, description, domain, and images in clickable preview cards
-- **Real-time Processing**: LiveView triggers async processing when content contains URLs
-- **Error Handling**: Graceful fallbacks for failed requests, malformed HTML, or missing metadata
+### Platform Decorators
+- **GitHub Decorator**: Repository, issue, and PR previews with OAuth2 support for private repos
+- **Asana Decorator**: Task and project previews with assignee, due dates, completion status
+- **Web Link Decorator**: Generic Open Graph/Twitter Card metadata for fallback
+- **Priority System**: Platform decorators (priority 10) override generic web decorator (priority 1)
+- **Multiple Preview Sizes**: Compact, normal, and expanded rendering modes
 
 ### Key Implementation Details
 - **Module Loading**: Uses `Code.ensure_loaded!` to ensure integration modules are available during registration
 - **Safe HTML Handling**: Custom `safe_html_escape/1` function handles both raw strings and `{:safe, content}` tuples
-- **Prose CSS Override**: Uses `!important` inline styles to override Tailwind prose styling in previews
 - **Background Processing**: Uses Phoenix Tasks for async metadata fetching to avoid blocking UI
-- **String Slice Compatibility**: Updated to use new Elixir 1.18 syntax (`start..-1//1`)
 - **Runtime Configuration**: OAuth2 credentials loaded via runtime.exs after .env file processing
+- **Error Handling**: Graceful fallbacks for failed requests, API limits, and missing authentication
 
 ## MCP Server Integration
 

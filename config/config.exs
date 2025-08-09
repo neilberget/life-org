@@ -72,6 +72,9 @@ config :ueberauth, Ueberauth,
     github: {Ueberauth.Strategy.Github, [
       default_scope: "repo,user:email",
       allow_private_emails: true
+    ]},
+    asana: {Ueberauth.Strategy.Asana, [
+      default_scope: "default"
     ]}
   ]
 

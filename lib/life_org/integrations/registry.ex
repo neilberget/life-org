@@ -144,7 +144,8 @@ defmodule LifeOrg.Integrations.Registry do
     # List of built-in integration modules
     builtin_modules = [
       LifeOrg.Integrations.Decorators.WebLink,
-      LifeOrg.Integrations.Decorators.GitHub
+      LifeOrg.Integrations.Decorators.GitHub,
+      LifeOrg.Integrations.Decorators.Asana
     ]
     
     # Register each module

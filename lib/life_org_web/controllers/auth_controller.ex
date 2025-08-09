@@ -211,6 +211,13 @@ defmodule LifeOrgWeb.AuthController do
         description: "Connect your GitHub account to access private repositories",
         icon: "github",
         scopes: ["repo", "user:email"]
+      },
+      %{
+        name: "Asana",
+        provider: "asana",
+        description: "Connect your Asana account to view task and project details",
+        icon: "asana",
+        scopes: ["default"]
       }
       # Add more providers here as they're implemented
     ]
