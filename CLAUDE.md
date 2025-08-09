@@ -233,6 +233,7 @@ mix phx.server
 - **Todo Fields**: title, description, tags (comma-separated), priority (low/medium/high), due_date, due_time
 - **Todo Comments**: Each todo supports threaded comments with markdown rendering
 - **Tag Filtering**: Filter dropdown allows filtering todos by tags
+- **Completed Todo Visibility**: Completed todos hidden by default with toggle button showing count, auto-clears "current" status when marking complete
 - **Incoming Todos**: Special section for AI-extracted todos from journal entries (blue banner)
 - **Todo Views**: Click todo to view details, hover to see edit/delete buttons
 - **Workspace Support**: Todos are scoped to workspaces (default workspace auto-created)

@@ -93,6 +93,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:search_results, [])
      |> assign(:show_search_results, false)
      |> assign(:searching, false)
+     |> assign(:show_completed, false)
      |> then(fn socket ->
        # Show todo modal if viewing a specific todo
        if viewing_todo do
@@ -203,7 +204,15 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("toggle_todo", %{"id" => id}, socket) do
     todo = Repo.get!(Todo, id)
-    {:ok, updated_todo} = WorkspaceService.update_todo(todo, %{completed: !todo.completed})
+    
+    # If marking as completed, also turn off current status
+    updates = if !todo.completed do
+      %{completed: true, current: false}
+    else
+      %{completed: false}
+    end
+    
+    {:ok, updated_todo} = WorkspaceService.update_todo(todo, updates)
 
     todos = update_todo_in_list(socket.assigns.todos, updated_todo)
     {:noreply, assign(socket, :todos, todos)}
@@ -845,6 +854,11 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:tag_filter, nil)
      |> assign(:deleting_todo_id, nil)
      |> push_event("hide_dropdown", %{id: "tag-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("toggle_show_completed", _params, socket) do
+    {:noreply, assign(socket, :show_completed, !socket.assigns.show_completed)}
   end
 
   @impl true
