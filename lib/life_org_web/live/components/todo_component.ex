@@ -416,8 +416,8 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
           <div class="text-sm text-gray-600 mt-1">
-            <div id={"todo-list-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
-              <%= raw(render_interactive_description(@todo.description, @todo.id, false)) %>
+            <div class="truncate">
+              <%= truncate_description(@todo.description) %>
             </div>
           </div>
         <% end %>
@@ -1027,6 +1027,25 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     |> Enum.flat_map(fn todo -> todo.tags || [] end)
     |> Enum.uniq()
     |> Enum.sort()
+  end
+
+  defp truncate_description(description) do
+    # Strip markdown and HTML, then truncate to one line
+    description
+    |> String.replace(~r/\*\*(.+?)\*\*/, "\\1")  # Remove bold
+    |> String.replace(~r/\*(.+?)\*/, "\\1")      # Remove italic
+    |> String.replace(~r/`(.+?)`/, "\\1")        # Remove code
+    |> String.replace(~r/#+\s+/, "")             # Remove headers
+    |> String.replace(~r/- \[.\] /, "")          # Remove checkbox markdown
+    |> String.replace(~r/\n+/, " ")              # Replace newlines with spaces
+    |> String.trim()
+    |> then(fn text ->
+      if String.length(text) > 80 do
+        String.slice(text, 0, 80) <> "..."
+      else
+        text
+      end
+    end)
   end
 
   defp render_interactive_description(description, todo_id, interactive \\ true) do

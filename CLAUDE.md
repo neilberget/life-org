@@ -158,6 +158,10 @@ mix user.delete <email>               # Delete user and all associated data
 - **Contextual actions**: Edit buttons appear on hover to reduce visual clutter
 - **Consistent interactions**: Reusable modal patterns across features
 - **Form usability**: Smart defaults (today's date), proper validation, clear labels
+- **Compact Overview Design**: Overview columns use truncated content to maximize information density
+  - Todo descriptions limited to single line with 80-character truncation
+  - Journal entries limited to 4 lines with CSS line-clamp for preview
+  - Full content accessible via click-to-view interaction pattern
 
 ## Development Setup
 

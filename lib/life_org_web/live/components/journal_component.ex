@@ -152,8 +152,8 @@ defmodule LifeOrgWeb.Components.JournalComponent do
         </div>
       </div>
       <div class="text-gray-700 prose prose-sm max-w-none">
-        <div id={"journal-preview-#{@entry.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@entry.content)}>
-          <%= render_markdown(@entry.content) %>
+        <div class="line-clamp-4 cursor-pointer" phx-click="view_journal_entry" phx-value-id={@entry.id}>
+          <%= truncate_journal_content(@entry.content) %>
         </div>
       </div>
     </div>
@@ -299,5 +299,17 @@ defmodule LifeOrgWeb.Components.JournalComponent do
       </form>
     </div>
     """
+  end
+
+  defp truncate_journal_content(content) do
+    # Strip markdown formatting and truncate for preview
+    content
+    |> String.replace(~r/\*\*(.+?)\*\*/, "\\1")  # Remove bold
+    |> String.replace(~r/\*(.+?)\*/, "\\1")      # Remove italic
+    |> String.replace(~r/`(.+?)`/, "\\1")        # Remove code
+    |> String.replace(~r/#+\s+/, "")             # Remove headers
+    |> String.replace(~r/- \[.\] /, "")          # Remove checkbox markdown
+    |> String.replace(~r/\[([^\]]+)\]\([^\)]+\)/, "\\1")  # Remove links, keep text
+    |> String.trim()
   end
 end
