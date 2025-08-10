@@ -139,6 +139,17 @@ defmodule LifeOrg.WorkspaceService do
     |> Repo.preload(:journal_entry)
   end
 
+  def list_journal_todos(journal_entry_id) do
+    Todo
+    |> where([t], t.journal_entry_id == ^journal_entry_id)
+    |> join(:left, [t], c in assoc(t, :comments))
+    |> group_by([t], t.id)
+    |> select([t, c], %{t | comment_count: count(c.id)})
+    |> order_by([t], [desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
+    |> Repo.all()
+    |> Repo.preload(:journal_entry)
+  end
+
   def create_todo(attrs, workspace_id) do
     attrs = Map.put(attrs, "workspace_id", workspace_id)
     

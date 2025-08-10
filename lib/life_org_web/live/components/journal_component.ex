@@ -22,7 +22,12 @@ defmodule LifeOrgWeb.Components.JournalComponent do
         </div>
 
         <.journal_form processing_journal_todos={assigns[:processing_journal_todos] || false} />
-        <.journal_entries entries={@entries} />
+        <.journal_entries 
+          entries={@entries} 
+          show_journal_chat={Map.get(assigns, :show_journal_chat, false)}
+          chat_journal_id={Map.get(assigns, :chat_journal_id, nil)}
+        />
+
 
         <!-- Edit Journal Entry Modal -->
         <%= if assigns[:editing_entry] do %>
@@ -87,13 +92,23 @@ defmodule LifeOrgWeb.Components.JournalComponent do
     ~H"""
     <div class="space-y-4">
       <%= for entry <- @entries do %>
-        <.journal_entry_card entry={entry} />
+        <.journal_entry_card 
+          entry={entry} 
+          show_journal_chat={Map.get(assigns, :show_journal_chat, false)}
+          chat_journal_id={Map.get(assigns, :chat_journal_id, nil)}
+          journal_chat_messages={Map.get(assigns, :journal_chat_messages, [])}
+          journal_conversations={Map.get(assigns, :journal_conversations, [])}
+          current_journal_conversation={Map.get(assigns, :current_journal_conversation)}
+        />
       <% end %>
     </div>
     """
   end
 
   def journal_entry_card(assigns) do
+    assigns = assign_new(assigns, :show_journal_chat, fn -> false end)
+    assigns = assign_new(assigns, :chat_journal_id, fn -> nil end)
+    
     ~H"""
     <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
       <div class="flex justify-between items-start mb-2">
@@ -112,6 +127,17 @@ defmodule LifeOrgWeb.Components.JournalComponent do
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            phx-click="view_journal_entry"
+            phx-value-id={@entry.id}
+            class="text-purple-600 hover:text-purple-700"
+            title="View journal entry and chat"
+          >
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
             </svg>
           </button>
           <button
@@ -186,6 +212,92 @@ defmodule LifeOrgWeb.Components.JournalComponent do
         </div>
       </div>
     </form>
+    """
+  end
+
+  def journal_chat_interface(assigns) do
+    ~H"""
+    <div class="mt-6 border-t border-gray-200 pt-6">
+      <div class="mb-4">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+          </svg>
+          Journal Chat
+        </h3>
+
+        <!-- Conversation Selector (if multiple conversations exist) -->
+        <%= if length(@conversations) > 1 do %>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Conversation:</label>
+            <select
+              phx-change="switch_journal_conversation"
+              phx-value-journal-id={@journal_id}
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              value={if @current_conversation, do: @current_conversation.id, else: ""}
+            >
+              <%= for conversation <- @conversations do %>
+                <option value={conversation.id}>
+                  <%= conversation.title %> (<%= length(conversation.chat_messages) %> messages)
+                </option>
+              <% end %>
+            </select>
+          </div>
+        <% end %>
+      </div>
+
+      <!-- Chat Messages -->
+      <div class="bg-gray-50 rounded-lg border border-gray-200 mb-4" style="max-height: 400px; overflow-y: auto;">
+        <div class="p-4">
+          <%= if length(@chat_messages) == 0 do %>
+            <div class="text-center text-gray-500 py-8">
+              <svg class="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+              </svg>
+              <p>Start a conversation about this journal entry</p>
+            </div>
+          <% else %>
+            <%= for message <- @chat_messages do %>
+              <div class={"mb-4 #{if message.role == "user", do: "text-right", else: "text-left"}"}>
+                <div class={"inline-block px-4 py-2 rounded-lg max-w-xs lg:max-w-md #{if message.role == "user", do: "bg-purple-600 text-white", else: "bg-white border border-gray-200"}"}>
+                  <%= if Map.get(message, :loading, false) do %>
+                    <div class="flex items-center">
+                      <svg class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <%= message.content %>
+                    </div>
+                  <% else %>
+                    <div class="whitespace-pre-wrap"><%= render_markdown(message.content) %></div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Chat Input -->
+      <form phx-submit="send_journal_chat_message" phx-value-journal-id={@journal_id} class="flex gap-2">
+        <input
+          type="text"
+          name="message"
+          placeholder="Ask about this journal entry..."
+          class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          required
+          autocomplete="off"
+        />
+        <button
+          type="submit"
+          class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+          </svg>
+        </button>
+      </form>
+    </div>
     """
   end
 end

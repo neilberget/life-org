@@ -36,7 +36,7 @@ defmodule LifeOrg.AIHandler do
     end
   end
 
-  def extract_todos_from_journal(journal_content, existing_todos \\ [], journal_entry_id \\ nil, workspace_id \\ nil) do
+  def extract_todos_from_journal(journal_content, existing_todos \\ [], journal_entry_id \\ nil, workspace_id \\ nil, return_conversation \\ true) do
     # Get existing tags for context
     existing_tags = get_unique_tags(existing_todos)
     tags_context = case existing_tags do
@@ -127,19 +127,33 @@ defmodule LifeOrg.AIHandler do
         
         # If there are tool uses, we need to process them and continue the conversation
         if length(tool_uses) > 0 do
-          execute_tools_and_extract_final_actions(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id)
+          execute_tools_and_extract_final_actions(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id, return_conversation)
         else
           # No tools used, just return empty actions
-          {:ok, []}
+          if return_conversation do
+            assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+            conversation_messages = [
+              %{role: "system", content: system_prompt},
+              %{role: "user", content: journal_content},
+              %{role: "assistant", content: assistant_message}
+            ]
+            {:ok, [], conversation_messages}
+          else
+            {:ok, []}
+          end
         end
         
       {:error, _error} ->
-        {:ok, []}
+        if return_conversation do
+          {:ok, [], []}
+        else
+          {:ok, []}
+        end
     end
   end
 
   # Handle multi-round tool processing for journal todo extraction
-  defp execute_tools_and_extract_final_actions(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id) do
+  defp execute_tools_and_extract_final_actions(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id, return_conversation) do
     # Execute all tools and get their results
     tool_results = Enum.map(tool_uses, fn tool_use ->
       case execute_tool_action(%{
@@ -183,15 +197,34 @@ defmodule LifeOrg.AIHandler do
         
         if length(tool_uses) > 0 do
           # More tools to execute - recurse
-          execute_tools_and_extract_final_actions(messages_with_tools, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id)
+          execute_tools_and_extract_final_actions(messages_with_tools, system_prompt, tools, content_blocks, tool_uses, workspace_id, existing_todos, journal_entry_id, return_conversation)
         else
-          # No more tools - extract final actions from previous tool results
-          extract_todo_actions_from_results(tool_results, existing_todos, journal_entry_id)
+          # No more tools - extract final actions and optionally return conversation
+          {:ok, actions} = extract_todo_actions_from_results(tool_results, existing_todos, journal_entry_id)
+          if return_conversation do
+            final_assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+            conversation_messages = [
+              %{role: "system", content: system_prompt}
+            ] ++ messages_with_tools ++ [
+              %{role: "assistant", content: final_assistant_message}
+            ]
+            {:ok, actions, conversation_messages}
+          else
+            {:ok, actions}
+          end
         end
         
       {:error, _error} ->
         # Fall back to extracting actions from current tool results
-        extract_todo_actions_from_results(tool_results, existing_todos, journal_entry_id)
+        {:ok, actions} = extract_todo_actions_from_results(tool_results, existing_todos, journal_entry_id)
+        if return_conversation do
+          conversation_messages = [
+            %{role: "system", content: system_prompt}
+          ] ++ messages_with_tools
+          {:ok, actions, conversation_messages}
+        else
+          {:ok, actions}
+        end
     end
   end
 
@@ -1152,22 +1185,20 @@ defmodule LifeOrg.AIHandler do
   end
 
   defp execute_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id) do
+    # Extract the original text content from the response (if any)
+    original_text = AnthropicClient.extract_text_from_content(content_blocks)
+    
     # Execute each tool and collect results
     tool_results = Enum.map(tool_uses, fn tool_use ->
-      
       # Convert to action and execute
       action = convert_tool_use_to_action(tool_use, [], nil)
-      result = case execute_tool_action(action, workspace_id) do
-        {:ok, result_data} when is_binary(result_data) ->
-          result_data
-        {:ok, _} ->
-          "Tool executed successfully"
-        {:error, error} ->
-          "Error: #{error}"
-      end
+      result = execute_tool_action(action, workspace_id)
+      
+      # Format the tool result properly using the existing format_tool_result function
+      formatted_result = format_tool_result(result, tool_use.name)
       
       # Build tool result message
-      AnthropicClient.build_tool_result_message(tool_use.id, result)
+      AnthropicClient.build_tool_result_message(tool_use.id, formatted_result)
     end)
     
     # Add assistant message (with tool calls) to conversation
@@ -1186,12 +1217,45 @@ defmodule LifeOrg.AIHandler do
     case result do
       {:ok, final_response} ->
         final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
-        final_message = AnthropicClient.extract_text_from_content(final_content_blocks)
         
-        # Convert tool actions for UI updates (no tool IDs needed for this)
-        tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, []))
+        # Check if the final response contains more tools to execute
+        final_tool_uses = AnthropicClient.extract_tool_uses_from_content(final_content_blocks)
         
-        {:ok, final_message, tool_actions}
+        if length(final_tool_uses) > 0 do
+          # Recursively handle additional tools
+          execute_tools_and_continue(updated_messages, system_prompt, tools, final_content_blocks, final_tool_uses, workspace_id)
+        else
+          # No more tools, extract final message
+          final_message = AnthropicClient.extract_text_from_content(final_content_blocks)
+          
+          # Convert tool actions for UI updates (no tool IDs needed for this)
+          tool_actions = Enum.map(tool_uses, &convert_tool_use_to_action(&1, []))
+          
+          # If there was original text content with the tools, preserve it
+          # If the final response is empty or just acknowledgment, use the original text
+          combined_message = case {String.trim(original_text), String.trim(final_message)} do
+            {"", final} when final != "" -> 
+              # No original text, use final response
+              final
+            {original, ""} ->
+              # Original text exists, no final response - use original
+              original
+            {original, final} when original != "" and final != "" ->
+              # Both exist - combine them appropriately
+              if String.length(final) < 50 and (String.contains?(final, "successfully") or String.contains?(final, "updated") or String.contains?(final, "completed")) do
+                # Final message looks like a brief acknowledgment, use original
+                original
+              else
+                # Both are substantial, combine them
+                original <> "\n\n" <> final
+              end
+            _ ->
+              # Fallback to final message
+              final_message
+          end
+          
+          {:ok, combined_message, tool_actions}
+        end
         
       {:error, error} ->
         {:error, "Sorry, I encountered an error processing the tool results: #{error}"}
@@ -1199,22 +1263,21 @@ defmodule LifeOrg.AIHandler do
   end
 
   defp execute_todo_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, todo, all_todos) do
+    # Extract the original text content from the response (if any)
+    original_text = AnthropicClient.extract_text_from_content(content_blocks)
+    
     # Execute each tool and collect results
     tool_results = Enum.map(tool_uses, fn tool_use ->
       # Convert to action and execute
       action = convert_todo_tool_use_to_action(tool_use, todo, all_todos)
       
-      result = case execute_tool_action(action, workspace_id) do
-        {:ok, result_data} when is_binary(result_data) ->
-          result_data
-        {:ok, _result_data} ->
-          "Tool executed successfully"
-        {:error, error} ->
-          "Error: #{error}"
-      end
+      result = execute_tool_action(action, workspace_id)
+      
+      # Format the tool result properly using the existing format_tool_result function
+      formatted_result = format_tool_result(result, tool_use.name)
       
       # Build tool result message
-      AnthropicClient.build_tool_result_message(tool_use.id, result)
+      AnthropicClient.build_tool_result_message(tool_use.id, formatted_result)
     end)
     
     # Add assistant message (with tool calls) to conversation
@@ -1247,7 +1310,30 @@ defmodule LifeOrg.AIHandler do
           # Convert tool actions for UI updates (no tool IDs needed for this)
           tool_actions = Enum.map(tool_uses, &convert_todo_tool_use_to_action(&1, todo, all_todos))
           
-          {:ok, final_message, tool_actions}
+          # If there was original text content with the tools, preserve it
+          # If the final response is empty or just acknowledgment, use the original text
+          combined_message = case {String.trim(original_text), String.trim(final_message)} do
+            {"", final} when final != "" -> 
+              # No original text, use final response
+              final
+            {original, ""} ->
+              # Original text exists, no final response - use original
+              original
+            {original, final} when original != "" and final != "" ->
+              # Both exist - combine them appropriately
+              if String.length(final) < 50 and (String.contains?(final, "successfully") or String.contains?(final, "updated") or String.contains?(final, "completed")) do
+                # Final message looks like a brief acknowledgment, use original
+                original
+              else
+                # Both are substantial, combine them
+                original <> "\n\n" <> final
+              end
+            _ ->
+              # Fallback to final message
+              final_message
+          end
+          
+          {:ok, combined_message, tool_actions}
         end
         
       {:error, error} ->
@@ -1478,6 +1564,284 @@ defmodule LifeOrg.AIHandler do
       end)
       
       "Found #{length(results)} items:\n\n#{formatted}"
+    end
+  end
+
+  def process_journal_message(message, journal_entry, related_todos, all_todos, journal_entries, conversation_history \\ [], workspace_id) do
+    system_prompt = build_journal_system_prompt(journal_entry, related_todos, all_todos, journal_entries)
+    
+    # Define available tools for journal conversations
+    tools = build_journal_tools_definition(journal_entry, all_todos, workspace_id)
+    
+    # Combine conversation history with new message
+    messages = conversation_history ++ [%{role: "user", content: message}]
+    
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
+      {:ok, response} ->
+        content_blocks = AnthropicClient.extract_content_from_response(response)
+        # Extract text message and tool uses separately
+        assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+        
+        tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
+        
+        # If there are tool uses, execute them and get final response
+        if length(tool_uses) > 0 do
+          try do
+            execute_journal_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, journal_entry, all_todos)
+          rescue
+            error ->
+              {:error, "Tool execution failed: #{inspect(error)}"}
+          end
+        else
+          # No tools used, return the response directly
+          {:ok, assistant_message, []}
+        end
+        
+      {:error, error} ->
+        {:error, "Sorry, I encountered an error: #{error}"}
+    end
+  end
+
+  defp build_journal_system_prompt(journal_entry, related_todos, _all_todos, journal_entries) do
+    # Format the current journal entry details
+    journal_details = format_journal_entry_details(journal_entry)
+    
+    # Format related todos (todos created from this journal entry)
+    related_todos_context = format_related_todos(related_todos)
+    
+    # Recent entries context (limited to avoid token bloat)
+    recent_entries_context = format_recent_journal_entries(journal_entries, journal_entry.id)
+    
+    """
+    You are an AI assistant helping a user with their journal entry and personal productivity system.
+
+    ## Current Journal Entry Context
+    #{journal_details}
+
+    #{related_todos_context}
+
+    #{recent_entries_context}
+
+    ## Available Tools
+    You have access to various tools to help manage todos and search content. Use these tools when:
+    - The user asks about creating, updating, or managing todos
+    - You need to find related information from their journal entries or todos
+    - The user wants to take action based on their journal entry
+
+    ## Guidelines
+    - Be conversational and helpful
+    - Reference the journal entry content naturally in your responses
+    - Suggest actionable insights when appropriate
+    - Use tools to help the user manage their tasks and find related content
+    - Focus on helping them reflect on their journal entry and plan next steps
+
+    Your goal is to help the user gain insights from their journal entry and manage their personal productivity effectively.
+    """
+  end
+
+  defp build_journal_tools_definition(_journal_entry, all_todos, _workspace_id) do
+    # Include the same tools available for todo management plus search
+    todo_tools = build_todo_tools_definition(%{id: nil}, all_todos)
+    
+    # Add journal-specific search tool
+    search_tool = %{
+      name: "search_content",
+      description: "Search through journal entries and todos using semantic similarity",
+      input_schema: %{
+        type: "object",
+        properties: %{
+          query: %{
+            type: "string",
+            description: "The search query to find relevant content"
+          },
+          content_type: %{
+            type: "string", 
+            enum: ["both", "journal_entries", "todos"],
+            description: "Type of content to search (default: both)"
+          },
+          limit: %{
+            type: "integer",
+            description: "Maximum number of results to return (default: 5)"
+          }
+        },
+        required: ["query"]
+      }
+    }
+    
+    todo_tools ++ [search_tool]
+  end
+
+  defp execute_journal_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, journal_entry, all_todos) do
+    # Execute each tool and collect results
+    tool_results = Enum.map(tool_uses, fn tool_use ->
+      # Convert to action and execute
+      action = convert_journal_tool_use_to_action(tool_use, journal_entry, all_todos)
+      
+      result = case execute_tool_action(action, workspace_id) do
+        {:ok, result_data} when is_binary(result_data) ->
+          result_data
+        {:ok, _result_data} ->
+          "Tool executed successfully"
+        {:error, error} ->
+          "Error: #{error}"
+      end
+      
+      # Build tool result message
+      AnthropicClient.build_tool_result_message(tool_use.id, result)
+    end)
+    
+    # Add assistant message (with tool calls) to conversation
+    assistant_message_with_tools = %{
+      role: "assistant", 
+      content: content_blocks
+    }
+    
+    # Continue conversation with tool results
+    updated_messages = messages ++ [assistant_message_with_tools] ++ tool_results
+    
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(updated_messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+    
+    case result do
+      {:ok, final_response} ->
+        final_content_blocks = AnthropicClient.extract_content_from_response(final_response)
+        
+        # Check if the final response contains more tools to execute
+        final_tool_uses = AnthropicClient.extract_tool_uses_from_content(final_content_blocks)
+        
+        if length(final_tool_uses) > 0 do
+          # Recursively handle additional tools
+          execute_journal_tools_and_continue(updated_messages, system_prompt, tools, final_content_blocks, final_tool_uses, workspace_id, journal_entry, all_todos)
+        else
+          # No more tools, extract final message
+          final_message = AnthropicClient.extract_text_from_content(final_content_blocks)
+          
+          # Convert tool actions for UI updates
+          tool_actions = Enum.map(tool_uses, &convert_journal_tool_use_to_action(&1, journal_entry, all_todos))
+          
+          {:ok, final_message, tool_actions}
+        end
+        
+      {:error, error} ->
+        {:error, "Tool execution and response failed: #{error}"}
+    end
+  end
+
+  defp convert_journal_tool_use_to_action(tool_use, journal_entry, _all_todos) do
+    case tool_use.name do
+      "search_content" ->
+        %{
+          action: :search_content,
+          query: tool_use.input["query"],
+          content_type: tool_use.input["content_type"] || "both",
+          limit: tool_use.input["limit"] || 5
+        }
+        
+      "create_todo" ->
+        %{
+          action: :create_todo,
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          priority: tool_use.input["priority"] || "medium",
+          tags: tool_use.input["tags"] || []
+        }
+        
+      "create_related_todo" ->
+        %{
+          action: :create_todo,
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          priority: tool_use.input["priority"] || "medium",
+          tags: tool_use.input["tags"] || [],
+          journal_entry_id: journal_entry.id
+        }
+        
+      "update_todo" ->
+        updates = %{}
+        |> maybe_add("title", tool_use.input["title"])
+        |> maybe_add("description", tool_use.input["description"])
+        |> maybe_add("priority", tool_use.input["priority"])
+        |> maybe_add("tags", tool_use.input["tags"])
+        |> maybe_add("due_date", tool_use.input["due_date"])
+        
+        %{
+          action: :update_todo,
+          id: tool_use.input["id"],
+          updates: updates
+        }
+        
+      "complete_todo" ->
+        %{
+          action: :complete_todo,
+          id: tool_use.input["id"],
+          completion_note: tool_use.input["completion_note"]
+        }
+        
+      "get_todo_by_id" ->
+        %{
+          action: :get_todo_by_id,
+          id_or_url: tool_use.input["id_or_url"]
+        }
+        
+      _ ->
+        {:error, "Unknown tool: #{tool_use.name}"}
+    end
+  end
+
+  defp format_journal_entry_details(journal_entry) do
+    date = Calendar.strftime(journal_entry.entry_date || journal_entry.inserted_at, "%B %d, %Y")
+    
+    """
+    **Journal Entry from #{date}**
+    #{journal_entry.content}
+    """
+  end
+
+  defp format_related_todos(related_todos) do
+    if Enum.empty?(related_todos) do
+      ""
+    else
+      todos_list = Enum.map_join(related_todos, "\n", fn todo ->
+        status = if todo.completed, do: "✓", else: "○"
+        priority = String.upcase(todo.priority || "medium")
+        "- #{status} [#{priority}] #{todo.title}"
+      end)
+      
+      """
+      
+      **Related Todos Created from This Journal Entry**
+      #{todos_list}
+      """
+    end
+  end
+
+  defp format_recent_journal_entries(journal_entries, current_entry_id) do
+    # Get recent entries (excluding the current one) limited to 3 to avoid token bloat
+    recent_entries = journal_entries
+    |> Enum.reject(&(&1.id == current_entry_id))
+    |> Enum.take(3)
+    
+    if Enum.empty?(recent_entries) do
+      ""
+    else
+      entries_list = Enum.map_join(recent_entries, "\n\n", fn entry ->
+        date = Calendar.strftime(entry.entry_date || entry.inserted_at, "%B %d, %Y")
+        content_preview = String.slice(entry.content, 0, 200)
+        content_preview = if String.length(entry.content) > 200, do: content_preview <> "...", else: content_preview
+        
+        "**#{date}**: #{content_preview}"
+      end)
+      
+      """
+      
+      **Recent Journal Entries for Context**
+      #{entries_list}
+      """
     end
   end
 end

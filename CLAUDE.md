@@ -39,8 +39,8 @@ todos:
 - belongs_to :workspace, belongs_to :journal_entry
 
 conversations:
-- id, title, workspace_id, todo_id (nullable), timestamps
-- belongs_to :workspace
+- id, title, workspace_id, todo_id (nullable), journal_entry_id (nullable), timestamps
+- belongs_to :workspace, belongs_to :todo, belongs_to :journal_entry
 
 chat_messages:
 - id, conversation_id, role, content, timestamps
@@ -55,6 +55,9 @@ todo_comments:
    - Markdown support with live rendering
    - Date picker defaulting to today
    - Full CRUD operations with modal editing
+   - **Dedicated Journal Entry Views**: Individual journal entries accessible via `/journal/:id` with two-column layout
+   - **Journal Chat Integration**: Each journal entry supports AI chat conversations in dedicated right-column interface
+   - **Todo Extraction Conversations**: Todo extraction process creates first conversation with full AI interaction history
 
 2. **AI Chat Assistant**
    - Persistent conversation threads
@@ -406,6 +409,7 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Event Handling**: Checkbox clicks use `preventDefault()` and `stopPropagation()` to prevent unwanted interactions
 - **AI Checkbox Support**: AI system prompts are configured to understand GitHub-style markdown checkboxes (`- [ ]`/`- [x]`) in todo descriptions, enabling creation of interactive subtask lists
 - **AI Tool UI Synchronization**: All AI tool actions (create, update, complete, delete) must update the LiveView assigns to trigger real-time UI updates - handled in three locations: general chat, journal extraction, and todo-specific chat
+- **Multi-Step Tool Execution Bug**: Fixed critical issue where general chat AI tool execution would fail on multi-step tool calls (when AI makes follow-up responses containing additional tools). The `execute_tools_and_continue` function now includes recursive tool handling matching the todo-specific chat implementation
 
 ## Admin & Monitoring
 
@@ -485,5 +489,11 @@ The journal extraction system was enhanced with **vector search integration** to
 - **Background Processing**: All AI processing remains asynchronous to avoid blocking UI
 - **UI State Management**: LiveView assigns are updated based on database changes rather than relying solely on returned actions
 - **Tool Execution Caching**: Results from search tools are formatted and cached for the AI conversation context
+
+### Conversation History Integration
+- **Full Conversation Capture**: The extraction pipeline now captures the complete AI conversation history (system prompts, user messages, tool results, assistant responses)
+- **Database Integration**: Extraction conversations are automatically saved to the conversations table with proper journal_entry_id linking
+- **UI Consistency**: Extracted todos maintain "incoming todos" UI behavior with accept/dismiss buttons
+- **Chat Continuity**: Users can view the complete extraction conversation when opening journal chat, providing full context for follow-up interactions
 
 This enhanced pipeline creates significantly more comprehensive and contextually relevant todos by leveraging the full workspace history through semantic search, while maintaining robust error handling and performance characteristics.

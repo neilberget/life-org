@@ -1,8 +1,7 @@
 defmodule LifeOrg.JournalEntry do
   use Ecto.Schema
   import Ecto.Changeset
-  alias LifeOrg.Workspace
-  alias LifeOrg.Todo
+  alias LifeOrg.{Workspace, Todo, Conversation}
 
   schema "journal_entries" do
     field :content, :string
@@ -13,6 +12,7 @@ defmodule LifeOrg.JournalEntry do
 
     belongs_to :workspace, Workspace
     has_many :todos, Todo
+    has_many :conversations, Conversation
 
     timestamps(type: :utc_datetime)
   end

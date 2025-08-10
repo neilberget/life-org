@@ -243,7 +243,14 @@
           </div>
           
           <LifeOrgWeb.Components.JournalComponent.journal_form processing_journal_todos={@processing_journal_todos} />
-          <LifeOrgWeb.Components.JournalComponent.journal_entries entries={@journal_entries} />
+          <LifeOrgWeb.Components.JournalComponent.journal_entries 
+            entries={@journal_entries} 
+            show_journal_chat={@show_journal_chat}
+            chat_journal_id={@chat_journal_id}
+            journal_chat_messages={@journal_chat_messages}
+            journal_conversations={@journal_conversations}
+            current_journal_conversation={@current_journal_conversation}
+          />
           
           <!-- Edit Journal Entry Modal -->
           <%= if assigns[:editing_entry] do %>
@@ -355,6 +362,11 @@
           entries={@journal_entries} 
           editing_entry={@editing_entry}
           processing_journal_todos={@processing_journal_todos}
+          show_journal_chat={@show_journal_chat}
+          chat_journal_id={@chat_journal_id}
+          journal_chat_messages={@journal_chat_messages}
+          journal_conversations={@journal_conversations}
+          current_journal_conversation={@current_journal_conversation}
         />
         <TodoComponent.todo_column 
           todos={filter_todos_by_tag(@todos, @tag_filter)}
