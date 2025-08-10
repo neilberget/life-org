@@ -1725,6 +1725,66 @@ defmodule LifeOrgWeb.OrganizerLive do
     handle_info({:extracted_todos, todo_actions, workspace_id, journal_entry_id, []}, socket)
   end
 
+  @impl true
+  def handle_info({:navigate_to, path}, socket) do
+    {:noreply, push_navigate(socket, to: path)}
+  end
+
+  @impl true
+  def handle_info({:submit_full_search, query}, socket) do
+    {:noreply,
+     socket
+     |> assign(:search_query, query)
+     |> assign(:searching, true)
+     |> perform_vector_search(query)}
+  end
+
+  @impl true
+  def handle_info({:search_dropdown_perform, query, component_id}, socket) do
+    if String.trim(query) != "" do
+      case EmbeddingsService.search_all(query, 
+        workspace_id: socket.assigns.current_workspace.id, 
+        limit: 5
+      ) do
+        {:ok, results} ->
+          # Transform results to expected format
+          formatted_results = Enum.map(results, fn
+            {:journal_entry, entry, score} ->
+              %{
+                type: :journal_entry,
+                id: entry.id,
+                content: entry.content,
+                similarity: score,
+                entry_date: entry.entry_date
+              }
+            {:todo, todo, score} ->
+              %{
+                type: :todo,
+                id: todo.id,
+                content: todo.title || todo.description || "",
+                similarity: score,
+                completed: todo.completed
+              }
+          end)
+          
+          send_update(LifeOrgWeb.SearchDropdownComponent,
+            id: component_id,
+            results: formatted_results,
+            show_dropdown: true,
+            loading: false
+          )
+
+        {:error, _reason} ->
+          send_update(LifeOrgWeb.SearchDropdownComponent,
+            id: component_id,
+            results: [],
+            loading: false
+          )
+      end
+    end
+    {:noreply, socket}
+  end
+
   defp update_todo_in_list(todos, updated_todo) do
     todos
     |> Enum.map(fn t ->

@@ -32,30 +32,12 @@
       
       <div class="flex items-center space-x-4">
         <!-- Search Bar -->
-        <div class="relative">
-          <form phx-submit="perform_search">
-            <input
-              type="text"
-              name="query"
-              value={@search_query}
-              placeholder="Vector search..."
-              class="w-64 px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-8"
-              autocomplete="off"
-            />
-            <svg class="w-4 h-4 text-gray-400 absolute left-2 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-            </svg>
-          </form>
-          <%= if @search_query != "" do %>
-            <button
-              phx-click="clear_search"
-              class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-            </button>
-          <% end %>
+        <div class="w-80">
+          <.live_component
+            module={LifeOrgWeb.SearchDropdownComponent}
+            id="header-search"
+            workspace_id={@current_workspace.id}
+          />
         </div>
         
         <div class="flex items-center space-x-2">

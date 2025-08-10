@@ -162,6 +162,11 @@ mix user.delete <email>               # Delete user and all associated data
   - Todo descriptions limited to single line with 80-character truncation
   - Journal entries limited to 4 lines with CSS line-clamp for preview
   - Full content accessible via click-to-view interaction pattern
+- **Live Search Experience**: Instant dropdown search with debounced queries
+  - SearchDropdownComponent provides live results as user types
+  - Keyboard navigation with arrow keys and Enter
+  - Direct navigation to items without page reload
+  - Content type indicators (icons and labels) for clarity
 
 ## Development Setup
 
@@ -262,6 +267,10 @@ mix phx.server
 
 ### Component Architecture
 - **TodoComponent** (`todo_component.ex`): Handles all todo UI rendering with interactive markdown checkboxes
+- **SearchDropdownComponent** (`search_dropdown_component.ex`): Live search with dropdown results
+  - Debounced search (300ms) to reduce API calls
+  - Parent LiveView handles search execution via `handle_info` callbacks
+  - Results formatted as maps with type, id, content, and metadata fields
 - **Modal System**: Reusable modal component for forms and views
 - **Form Components**: `add_todo_form`, `edit_todo_form` with consistent styling
 - **Priority Classes**: Visual distinction with colors (red=high, yellow=medium, green=low)
