@@ -10,7 +10,57 @@ defmodule LifeOrgWeb.JournalTimelineLive do
   alias LifeOrg.JournalEntry
 
   @impl true
-  def mount(_params, _session, socket) do
+  def handle_params(params, _url, socket) do
+    # Skip if we haven't finished mounting yet
+    if !Map.has_key?(socket.assigns, :journal_entries) do
+      {:noreply, socket}
+    else
+      # Handle URL parameter changes when navigating
+      requested_entry_id = case params["id"] do
+        nil -> nil
+        id_str -> String.to_integer(id_str)
+      end
+
+      # If we have a specific entry ID and it's different from current selection
+      if requested_entry_id && (!socket.assigns[:selected_entry] || socket.assigns.selected_entry.id != requested_entry_id) do
+        # Find and select the entry
+        case Enum.find(socket.assigns.journal_entries, &(&1.id == requested_entry_id)) do
+        nil ->
+          {:noreply, socket}
+        entry ->
+          # Load the entry's data
+          related_todos = WorkspaceService.list_journal_todos(entry.id)
+          conversations = ConversationService.list_journal_conversations(entry.id)
+          messages =
+            case conversations do
+              [] -> []
+              [conversation | _] ->
+                conversation.chat_messages
+                |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+            end
+          
+          {:noreply,
+           socket
+           |> assign(:selected_entry, entry)
+           |> assign(:related_todos, related_todos)
+           |> assign(:show_todos_section, false)
+           |> assign(:todos_section_journal_id, nil)
+           |> assign(:show_journal_chat, true)
+           |> assign(:chat_journal_id, entry.id)
+           |> assign(:chat_journal_entry, entry)
+           |> assign(:journal_conversations, conversations)
+           |> assign(:current_journal_conversation, List.first(conversations))
+           |> assign(:journal_chat_messages, messages)
+           |> push_event("scroll_to_entry", %{entry_id: entry.id})}
+        end
+      else
+        {:noreply, socket}
+      end
+    end
+  end
+
+  @impl true
+  def mount(params, _session, socket) do
     current_user = socket.assigns.current_user
     
     {:ok, _} = WorkspaceService.ensure_default_workspace(current_user)
@@ -19,12 +69,18 @@ defmodule LifeOrgWeb.JournalTimelineLive do
     workspaces = WorkspaceService.list_workspaces(current_user.id)
     journal_entries = WorkspaceService.list_journal_entries(current_workspace.id)
 
-    # Auto-select first entry if any exist and load its chat
-    {selected_entry, related_todos, chat_data} = 
-      case journal_entries do
-        [] -> 
-          {nil, [], {false, nil, nil, [], [], nil}}
-        [first_entry | _] -> 
+    # Check if a specific journal ID was provided in params
+    requested_entry_id = case params["id"] do
+      nil -> nil
+      id_str -> String.to_integer(id_str)
+    end
+
+    # Auto-select requested entry or first entry if any exist and load its chat
+    {selected_entry, related_todos, chat_data, should_scroll} = 
+      case {requested_entry_id, journal_entries} do
+        {nil, []} -> 
+          {nil, [], {false, nil, nil, [], [], nil}, false}
+        {nil, [first_entry | _]} -> 
           todos = WorkspaceService.list_journal_todos(first_entry.id)
           conversations = ConversationService.list_journal_conversations(first_entry.id)
           messages =
@@ -34,29 +90,69 @@ defmodule LifeOrgWeb.JournalTimelineLive do
                 conversation.chat_messages
                 |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
             end
-          {first_entry, todos, {true, first_entry.id, first_entry, conversations, List.first(conversations), messages}}
+          {first_entry, todos, {true, first_entry.id, first_entry, conversations, List.first(conversations), messages}, false}
+        {id, entries} ->
+          # Find the requested entry
+          case Enum.find(entries, &(&1.id == id)) do
+            nil -> 
+              # Entry not found, fall back to first entry
+              case entries do
+                [] -> {nil, [], {false, nil, nil, [], [], nil}, false}
+                [first_entry | _] -> 
+                  todos = WorkspaceService.list_journal_todos(first_entry.id)
+                  conversations = ConversationService.list_journal_conversations(first_entry.id)
+                  messages =
+                    case conversations do
+                      [] -> []
+                      [conversation | _] ->
+                        conversation.chat_messages
+                        |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+                    end
+                  {first_entry, todos, {true, first_entry.id, first_entry, conversations, List.first(conversations), messages}, false}
+              end
+            entry ->
+              todos = WorkspaceService.list_journal_todos(entry.id)
+              conversations = ConversationService.list_journal_conversations(entry.id)
+              messages =
+                case conversations do
+                  [] -> []
+                  [conversation | _] ->
+                    conversation.chat_messages
+                    |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+                end
+              {entry, todos, {true, entry.id, entry, conversations, List.first(conversations), messages}, true}
+          end
       end
     
     {show_chat, chat_journal_id, chat_journal_entry, conversations, current_conversation, chat_messages} = chat_data
+    
+    socket = 
+      socket
+      |> assign(:current_workspace, current_workspace)
+      |> assign(:workspaces, workspaces)
+      |> assign(:journal_entries, journal_entries)
+      |> assign(:selected_entry, selected_entry)
+      |> assign(:related_todos, related_todos)
+      |> assign(:user_timezone, current_user.timezone || "America/Chicago")
+      |> assign(:show_add_form, false)
+      |> assign(:processing_journal_todos, false)
+      |> assign(:show_journal_chat, show_chat)
+      |> assign(:chat_journal_id, chat_journal_id)
+      |> assign(:chat_journal_entry, chat_journal_entry)
+      |> assign(:journal_chat_messages, chat_messages || [])
+      |> assign(:journal_conversations, conversations || [])
+      |> assign(:current_journal_conversation, current_conversation)
+      |> assign(:show_todos_section, false)
+      |> assign(:todos_section_journal_id, nil)
+    
+    # If we loaded a specific entry, scroll to it after mount
+    socket = if should_scroll && selected_entry do
+      push_event(socket, "scroll_to_entry_on_mount", %{entry_id: selected_entry.id})
+    else
+      socket
+    end
 
-    {:ok,
-     socket
-     |> assign(:current_workspace, current_workspace)
-     |> assign(:workspaces, workspaces)
-     |> assign(:journal_entries, journal_entries)
-     |> assign(:selected_entry, selected_entry)
-     |> assign(:related_todos, related_todos)
-     |> assign(:user_timezone, current_user.timezone || "America/Chicago")
-     |> assign(:show_add_form, false)
-     |> assign(:processing_journal_todos, false)
-     |> assign(:show_journal_chat, show_chat)
-     |> assign(:chat_journal_id, chat_journal_id)
-     |> assign(:chat_journal_entry, chat_journal_entry)
-     |> assign(:journal_chat_messages, chat_messages || [])
-     |> assign(:journal_conversations, conversations || [])
-     |> assign(:current_journal_conversation, current_conversation)
-     |> assign(:show_todos_section, false)
-     |> assign(:todos_section_journal_id, nil)}
+    {:ok, socket}
   end
 
   @impl true
@@ -130,7 +226,8 @@ defmodule LifeOrgWeb.JournalTimelineLive do
      |> assign(:journal_conversations, conversations)
      |> assign(:current_journal_conversation, List.first(conversations))
      |> assign(:journal_chat_messages, messages)
-     |> push_event("scroll_to_entry", %{entry_id: entry_id})}
+     |> push_event("scroll_to_entry", %{entry_id: entry_id})
+     |> push_patch(to: "/journal/#{entry_id}")}
   end
 
   @impl true
@@ -166,7 +263,8 @@ defmodule LifeOrgWeb.JournalTimelineLive do
          |> assign(:journal_conversations, conversations)
          |> assign(:current_journal_conversation, List.first(conversations))
          |> assign(:journal_chat_messages, messages)
-         |> push_event("scroll_to_entry", %{entry_id: next_entry.id})}
+         |> push_event("scroll_to_entry", %{entry_id: next_entry.id})
+         |> push_patch(to: "/journal/#{next_entry.id}")}
     end
   end
 
@@ -203,7 +301,8 @@ defmodule LifeOrgWeb.JournalTimelineLive do
          |> assign(:journal_conversations, conversations)
          |> assign(:current_journal_conversation, List.first(conversations))
          |> assign(:journal_chat_messages, messages)
-         |> push_event("scroll_to_entry", %{entry_id: prev_entry.id})}
+         |> push_event("scroll_to_entry", %{entry_id: prev_entry.id})
+         |> push_patch(to: "/journal/#{prev_entry.id}")}
     end
   end
 

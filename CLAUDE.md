@@ -391,11 +391,14 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 ## Journal Timeline Architecture
 
 ### Dedicated Timeline View
-- **Route**: `/journal` provides a focused, chronological timeline view of journal entries
+- **Routes**: 
+  - `/journal` - Timeline view with first entry auto-selected
+  - `/journal/:id` - Timeline view with specific entry selected and auto-scrolled
 - **Smart Date Display**: Date separators only appear when dates change between entries (no repetitive timestamps)
 - **Content Expansion**: Selected entries show full content inline; others show 10-line previews
 - **Keyboard Navigation**: j/k vim-style shortcuts for timeline navigation with auto-scroll
 - **Auto-scroll**: Selected entries are automatically scrolled into view on expand/collapse
+- **URL State Management**: Browser URL updates to `/journal/:id` as you navigate, enabling direct linking and browser history
 
 ### Design Philosophy
 - **Minimal Visual Clutter**: Extremely subtle timeline indicators (1.5px dots) instead of prominent bullets
@@ -404,10 +407,11 @@ External AI tools can connect to query data like "Any Mathler tasks I have liste
 - **Context Sidebar**: Right column shows todos extracted from selected journal entry
 
 ### Technical Implementation
-- **JournalTimelineLive**: Dedicated LiveView module separate from main organizer
-- **JavaScript Hooks**: TimelineNavigation hook handles keyboard events and smooth scrolling
+- **JournalTimelineLive**: Dedicated LiveView module with `handle_params/3` for URL state management
+- **JavaScript Hooks**: TimelineNavigation hook handles keyboard events, smooth scrolling, and instant scroll on mount
 - **Date Logic**: Uses Date.compare/2 to intelligently show date separators only when needed
 - **Auto-selection**: First entry selected by default on page load for immediate context
+- **LiveView Navigation**: Uses `push_patch/2` for URL updates without full page reloads
 
 ## Future Enhancement Opportunities
 

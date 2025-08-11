@@ -76,6 +76,21 @@ Hooks.TimelineNavigation = {
       }, 100);
     });
 
+    // Handle scroll to entry on mount (for direct journal/:id URLs)
+    this.handleEvent("scroll_to_entry_on_mount", ({ entry_id }) => {
+      // Larger delay on mount to ensure DOM is fully loaded
+      setTimeout(() => {
+        const entryElement = document.querySelector(`[phx-value-id="${entry_id}"]`);
+        if (entryElement) {
+          entryElement.scrollIntoView({ 
+            behavior: 'instant', 
+            block: 'center',
+            inline: 'nearest'
+          });
+        }
+      }, 200);
+    });
+
     document.addEventListener("keydown", this.handleKeyPress);
   },
 
