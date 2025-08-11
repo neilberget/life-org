@@ -62,6 +62,9 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Configure timezone database
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+
 # Anthropic API configuration
 config :life_org,
   anthropic_api_key: System.get_env("ANTHROPIC_API_KEY")

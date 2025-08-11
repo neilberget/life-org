@@ -2,6 +2,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   use Phoenix.Component
   import LifeOrgWeb.Components.ModalComponent
   import Phoenix.HTML
+  alias LifeOrg.TimezoneHelper
 
   def todo_column(assigns) do
     unique_tags = get_unique_tags(assigns.all_todos || assigns.todos)
@@ -429,7 +430,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <% end %>
           <%= if @todo.due_date do %>
             <span class="text-xs text-gray-500">
-              📅 <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
+              📅 <%= format_due_datetime(@todo.due_date, @todo.due_time, Map.get(assigns, :user_timezone)) %>
             </span>
           <% end %>
           <%= if @todo.comment_count && @todo.comment_count > 0 do %>
@@ -665,15 +666,30 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   defp priority_class("low"), do: "bg-green-100 text-green-800"
   defp priority_class(_), do: "bg-gray-100 text-gray-800"
 
-  defp format_due_datetime(date, nil) do
-    Date.to_string(date)
+  defp format_due_datetime(date, nil, timezone) do
+    if timezone do
+      # Convert the date to a datetime at midnight UTC, then to user timezone
+      {:ok, datetime} = DateTime.new(date, ~T[00:00:00], "Etc/UTC")
+      datetime
+      |> TimezoneHelper.to_user_timezone(timezone)
+      |> DateTime.to_date()
+      |> Date.to_string()
+    else
+      Date.to_string(date)
+    end
   end
 
-  defp format_due_datetime(date, time) do
-    date_str = Date.to_string(date)
-    # Show only HH:MM
-    time_str = Time.to_string(time) |> String.slice(0, 5)
-    "#{date_str} at #{time_str}"
+  defp format_due_datetime(date, time, timezone) when not is_nil(time) do
+    if timezone do
+      # Combine date and time into UTC datetime, then convert to user timezone
+      {:ok, datetime} = DateTime.new(date, time, "Etc/UTC")
+      TimezoneHelper.format_datetime(datetime, timezone)
+    else
+      date_str = Date.to_string(date)
+      # Show only HH:MM
+      time_str = Time.to_string(time) |> String.slice(0, 5)
+      "#{date_str} at #{time_str}"
+    end
   end
 
   def todo_view(assigns) do
@@ -702,7 +718,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                   </svg>
-                  <%= format_due_datetime(@todo.due_date, @todo.due_time) %>
+                  <%= format_due_datetime(@todo.due_date, @todo.due_time, Map.get(assigns, :user_timezone)) %>
                 </span>
               <% end %>
               <%= if @todo.completed do %>
@@ -1006,7 +1022,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         </div>
         <div class="flex items-center justify-between mt-2">
           <span class="text-xs text-gray-500">
-            <%= Calendar.strftime(@comment.inserted_at, "%B %d, %Y at %I:%M %p") %>
+            <%= TimezoneHelper.format_datetime(@comment.inserted_at, Map.get(assigns, :user_timezone, "America/Chicago")) %>
           </span>
           <button
             phx-click="delete_todo_comment"

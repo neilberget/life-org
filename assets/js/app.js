@@ -44,6 +44,48 @@ Hooks.WorkspacePersistence = {
   }
 };
 
+// Timeline navigation hook for j/k shortcuts
+Hooks.TimelineNavigation = {
+  mounted() {
+    this.handleKeyPress = (event) => {
+      // Only handle j/k when not in an input field
+      if (event.target.tagName.toLowerCase() === 'input' ||
+          event.target.tagName.toLowerCase() === 'textarea' ||
+          event.target.contentEditable === 'true') {
+        return;
+      }
+
+      if (event.key === 'j' || event.key === 'k') {
+        event.preventDefault();
+        this.pushEvent("navigate_timeline", { key: event.key });
+      }
+    };
+
+    // Handle scroll to entry event from server
+    this.handleEvent("scroll_to_entry", ({ entry_id }) => {
+      // Small delay to allow DOM to update after content expansion/collapse
+      setTimeout(() => {
+        const entryElement = document.querySelector(`[phx-value-id="${entry_id}"]`);
+        if (entryElement) {
+          entryElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+          });
+        }
+      }, 100);
+    });
+
+    document.addEventListener("keydown", this.handleKeyPress);
+  },
+
+  beforeDestroy() {
+    if (this.handleKeyPress) {
+      document.removeEventListener("keydown", this.handleKeyPress);
+    }
+  }
+};
+
 // Global modal and UI event handlers
 Hooks.GlobalEvents = {
   mounted() {

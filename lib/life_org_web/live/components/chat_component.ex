@@ -1,6 +1,7 @@
 defmodule LifeOrgWeb.Components.ChatComponent do
   use Phoenix.Component
   import LifeOrgWeb.MarkdownHelper
+  alias LifeOrg.TimezoneHelper
 
   def ai_sidebar(assigns) do
     ~H"""
@@ -97,7 +98,7 @@ defmodule LifeOrgWeb.Components.ChatComponent do
                 <%= conversation.title %>
               </div>
               <div class="text-xs text-gray-500 mt-1">
-                <%= Calendar.strftime(conversation.updated_at, "%b %d, %Y") %>
+                <%= TimezoneHelper.format_date(conversation.updated_at, Map.get(assigns, :user_timezone, "America/Chicago")) %>
               </div>
             </button>
           <% end %>
@@ -453,7 +454,7 @@ defmodule LifeOrgWeb.Components.ChatComponent do
                     <%= conversation.title %>
                   </div>
                   <div class="text-sm text-gray-500">
-                    <%= Calendar.strftime(conversation.updated_at, "%b %d, %Y at %I:%M %p") %>
+                    <%= TimezoneHelper.format_datetime(conversation.updated_at, Map.get(assigns, :user_timezone, "America/Chicago")) %>
                   </div>
                 </button>
               <% end %>

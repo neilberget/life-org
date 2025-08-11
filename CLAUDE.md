@@ -91,6 +91,7 @@ todo_comments:
 - **Session-based**: Standard Phoenix session authentication with remember_me functionality
 - **LiveView Integration**: Uses `on_mount {LifeOrgWeb.UserAuth, :ensure_authenticated}` for protected LiveViews
 - **Password Requirements**: Minimum 8 characters for local development
+- **Timezone Support**: Users have timezone preferences (default: America/Chicago) with timezone-aware date/time display throughout UI
 
 ### Workspace Scoping & Data Isolation
 - **User-Scoped Workspaces**: Each user can only access their own workspaces
@@ -179,6 +180,14 @@ mix user.delete <email>               # Delete user and all associated data
 ```bash
 export ANTHROPIC_API_KEY="your-api-key-here"
 ```
+
+### Timezone System
+- **User Timezone Field**: Each user has a timezone preference stored in the database (default: "America/Chicago")
+- **TimezoneHelper Module**: Centralized helper functions for timezone conversion and formatting
+- **Timezone-Aware Display**: All dates and times in the UI are converted from UTC storage to user's local timezone
+- **User Settings Integration**: Users can change their timezone via `/users/settings` page with common US timezones
+- **Fallback Handling**: Gracefully handles missing or invalid timezone preferences
+- **Components Updated**: All LiveView components (TodoComponent, JournalComponent, ChatComponent) support timezone-aware formatting
 
 ### Database Configuration
 MySQL connection configured for:
@@ -378,6 +387,27 @@ plug Hermes.Server.Transport.StreamableHTTP.Plug,
 
 ### Usage
 External AI tools can connect to query data like "Any Mathler tasks I have listed?" or "Show me recent journal entries about work" and receive properly formatted, contextual responses from the user's actual data.
+
+## Journal Timeline Architecture
+
+### Dedicated Timeline View
+- **Route**: `/journal` provides a focused, chronological timeline view of journal entries
+- **Smart Date Display**: Date separators only appear when dates change between entries (no repetitive timestamps)
+- **Content Expansion**: Selected entries show full content inline; others show 10-line previews
+- **Keyboard Navigation**: j/k vim-style shortcuts for timeline navigation with auto-scroll
+- **Auto-scroll**: Selected entries are automatically scrolled into view on expand/collapse
+
+### Design Philosophy
+- **Minimal Visual Clutter**: Extremely subtle timeline indicators (1.5px dots) instead of prominent bullets
+- **Clean Typography**: Focus on readability with proper prose styling and line-clamping
+- **Smart Interaction**: Click or keyboard selection triggers content expansion and related todo display
+- **Context Sidebar**: Right column shows todos extracted from selected journal entry
+
+### Technical Implementation
+- **JournalTimelineLive**: Dedicated LiveView module separate from main organizer
+- **JavaScript Hooks**: TimelineNavigation hook handles keyboard events and smooth scrolling
+- **Date Logic**: Uses Date.compare/2 to intelligently show date separators only when needed
+- **Auto-selection**: First entry selected by default on page load for immediate context
 
 ## Future Enhancement Opportunities
 

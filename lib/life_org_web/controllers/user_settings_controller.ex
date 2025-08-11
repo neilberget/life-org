@@ -50,6 +50,21 @@ defmodule LifeOrgWeb.UserSettingsController do
     end
   end
 
+  def update(conn, %{"action" => "update_timezone"} = params) do
+    %{"user" => user_params} = params
+    user = conn.assigns.current_user
+
+    case Accounts.update_user_timezone(user, user_params) do
+      {:ok, _user} ->
+        conn
+        |> put_flash(:info, "Timezone updated successfully.")
+        |> redirect(to: ~p"/users/settings")
+
+      {:error, changeset} ->
+        render(conn, :edit, timezone_changeset: changeset)
+    end
+  end
+
   def confirm_email(conn, %{"token" => token}) do
     case Accounts.update_user_email(conn.assigns.current_user, token) do
       :ok ->
@@ -70,5 +85,7 @@ defmodule LifeOrgWeb.UserSettingsController do
     conn
     |> assign(:email_changeset, Accounts.change_user_email(user))
     |> assign(:password_changeset, Accounts.change_user_password(user))
+    |> assign(:timezone_changeset, Accounts.change_user_timezone(user))
+    |> assign(:timezones, LifeOrg.TimezoneHelper.us_timezones())
   end
 end

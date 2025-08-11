@@ -22,6 +22,7 @@ defmodule LifeOrgWeb.Router do
 
     live "/", OrganizerLive
     live "/todo/:id", OrganizerLive
+    live "/journal", JournalTimelineLive
     live "/journal/:id", JournalEntryLive
     
     # Integration settings

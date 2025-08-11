@@ -99,6 +99,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:show_search_results, false)
      |> assign(:searching, false)
      |> assign(:show_completed, false)
+     |> assign(:user_timezone, current_user.timezone || "America/Chicago")
      |> then(fn socket ->
        # Show todo modal if viewing a specific todo
        if viewing_todo do

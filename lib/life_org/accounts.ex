@@ -215,6 +215,36 @@ defmodule LifeOrg.Accounts do
     end
   end
 
+  @doc """
+  Returns an `%Ecto.Changeset{}` for changing the user timezone.
+
+  ## Examples
+
+      iex> change_user_timezone(user)
+      %Ecto.Changeset{data: %User{}}
+
+  """
+  def change_user_timezone(user, attrs \\ %{}) do
+    User.timezone_changeset(user, attrs)
+  end
+
+  @doc """
+  Updates the user timezone.
+
+  ## Examples
+
+      iex> update_user_timezone(user, %{timezone: "America/New_York"})
+      {:ok, %User{}}
+
+      iex> update_user_timezone(user, %{timezone: "invalid"})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def update_user_timezone(user, attrs) do
+    changeset = User.timezone_changeset(user, attrs)
+    Repo.update(changeset)
+  end
+
   ## Session
 
   @doc """

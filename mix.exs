@@ -69,7 +69,9 @@ defmodule LifeOrg.MixProject do
       {:dotenvy, "~> 0.8"},
       {:number, "~> 1.0"},
       {:tidewave, "~> 0.2", only: :dev},
-      {:openai_ex, "~> 0.8"}
+      {:openai_ex, "~> 0.8"},
+      {:tzdata, "~> 1.1"},
+      {:timex, "~> 3.7"}
     ]
   end
 

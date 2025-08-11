@@ -41,6 +41,12 @@
         </div>
         
         <div class="flex items-center space-x-2">
+          <.link navigate="/journal" class="px-3 py-1 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center space-x-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <span>Timeline</span>
+          </.link>
           <button 
             phx-click="show_workspace_form"
             class="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -96,7 +102,7 @@
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                         </svg>
                         <span class="text-sm font-medium text-blue-600">Journal Entry</span>
-                        <span class="text-xs text-gray-500"><%= Date.to_string(item.entry_date) %></span>
+                        <span class="text-xs text-gray-500"><%= LifeOrg.TimezoneHelper.format_date(item.entry_date, @user_timezone) %></span>
                       </div>
                       <p class="text-sm text-gray-700 line-clamp-3"><%= String.slice(item.content, 0, 200) %>...</p>
                     <% :todo -> %>
@@ -333,6 +339,7 @@
                   todo={@viewing_todo} 
                   comments={Map.get(assigns, :todo_comments, [])}
                   checkbox_update_trigger={Map.get(assigns, :checkbox_update_trigger, 0)}
+                  user_timezone={@user_timezone}
                 />
               </LifeOrgWeb.Components.ModalComponent.modal>
             <% end %>
@@ -349,6 +356,7 @@
           journal_chat_messages={@journal_chat_messages}
           journal_conversations={@journal_conversations}
           current_journal_conversation={@current_journal_conversation}
+          user_timezone={@user_timezone}
         />
         <TodoComponent.todo_column 
           todos={filter_todos_by_tag(@todos, @tag_filter)}
@@ -357,6 +365,7 @@
           incoming_todos={@incoming_todos}
           editing_todo={@editing_todo}
           adding_todo={@adding_todo}
+          user_timezone={@user_timezone}
           viewing_todo={@viewing_todo}
           todo_comments={@todo_comments}
           show_comment_form={@show_comment_form}
@@ -394,6 +403,7 @@
           show={@show_ai_sidebar}
           view={@ai_sidebar_view}
           tag_filter={@tag_filter}
+          user_timezone={@user_timezone}
         />
       </div>
       

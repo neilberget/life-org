@@ -3,6 +3,7 @@ defmodule LifeOrgWeb.Components.JournalComponent do
   import LifeOrgWeb.MarkdownHelper
   import LifeOrgWeb.Components.ModalComponent
   import LifeOrgWeb.Components.RichTextEditorComponent
+  alias LifeOrg.TimezoneHelper
 
   def journal_column(assigns) do
     ~H"""
@@ -114,9 +115,9 @@ defmodule LifeOrgWeb.Components.JournalComponent do
       <div class="flex justify-between items-start mb-2">
         <span class="text-sm text-gray-500">
           <%= if @entry.entry_date do %>
-            <%= Calendar.strftime(@entry.entry_date, "%B %d, %Y") %>
+            <%= TimezoneHelper.format_date(@entry.entry_date, Map.get(assigns, :user_timezone, "America/Chicago")) %>
           <% else %>
-            <%= Calendar.strftime(@entry.inserted_at, "%B %d, %Y") %>
+            <%= TimezoneHelper.format_date(@entry.inserted_at, Map.get(assigns, :user_timezone, "America/Chicago")) %>
           <% end %>
         </span>
         <div class="flex gap-2">

@@ -1,0 +1,252 @@
+<div id="journal-timeline" class="h-screen flex flex-col bg-white" phx-hook="WorkspacePersistence">
+<div id="timeline-navigation" phx-hook="TimelineNavigation" class="hidden"></div>
+  <!-- Header -->
+  <div class="flex items-center justify-between px-8 py-6 bg-white border-b border-slate-200">
+    <div class="flex items-center space-x-6">
+      <h1 class="text-2xl font-semibold text-slate-800">
+        Journal Timeline
+      </h1>
+      
+      <!-- Workspace Selector -->
+      <div class="relative">
+        <select 
+          class="appearance-none bg-white border border-slate-300 rounded-lg px-3 py-2 pr-8 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          phx-change="switch_workspace"
+          name="id"
+        >
+          <%= for workspace <- @workspaces do %>
+            <option value={workspace.id} selected={workspace.id == @current_workspace.id}>
+              <%= workspace.name %>
+            </option>
+          <% end %>
+        </select>
+        <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Back to Organizer -->
+    <.link navigate="/" class="flex items-center space-x-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-900 transition-colors duration-200">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+      </svg>
+      <span>Back to Organizer</span>
+    </.link>
+  </div>
+
+  <!-- Main Content -->
+  <div class="flex-1 flex overflow-hidden">
+    <!-- Timeline Column -->
+    <div class="flex-1 overflow-y-auto px-4 py-8 timeline-scroll">
+      <div class="max-w-4xl mx-auto">
+        <!-- Timeline Feed -->
+        <div class="relative">
+          <!-- Subtle timeline line -->
+          <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-200"></div>
+          
+          <div class="space-y-0">
+            <%= for {entry, index} <- Enum.with_index(@journal_entries) do %>
+              <% prev_entry = if index > 0, do: Enum.at(@journal_entries, index - 1), else: nil %>
+              <% show_date = prev_entry == nil || Date.compare(entry.entry_date, prev_entry.entry_date) != :eq %>
+              
+              <%= if show_date do %>
+                <!-- Date Separator -->
+                <div class="relative flex items-center justify-center py-8">
+                  <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-slate-200"></div>
+                  </div>
+                  <div class="relative bg-white px-4">
+                    <time class="text-sm font-medium text-slate-600">
+                      <%= Calendar.strftime(entry.entry_date, "%B %d, %Y") %>
+                    </time>
+                  </div>
+                </div>
+              <% end %>
+
+              <article 
+                class={[
+                  "group relative cursor-pointer transition-all duration-200 pl-8 pb-8",
+                  if(@selected_entry && @selected_entry.id == entry.id, 
+                    do: "bg-blue-50/30 -mx-4 px-12 py-6 rounded-lg", 
+                    else: "")
+                ]}
+                phx-click="select_entry"
+                phx-value-id={entry.id}
+              >
+                <!-- Extremely subtle entry indicator -->
+                <div class={[
+                  "absolute left-1.5 top-6 w-1.5 h-1.5 rounded-full transition-all duration-200",
+                  if(@selected_entry && @selected_entry.id == entry.id,
+                    do: "bg-blue-400",
+                    else: "bg-slate-300 group-hover:bg-slate-400")
+                ]}></div>
+
+                <!-- Entry number - subtle -->
+                <div class="flex justify-end mb-2">
+                  <div class="text-xs font-mono text-slate-300">
+                    #<%= length(@journal_entries) - index %>
+                  </div>
+                </div>
+
+              <!-- Content Preview -->
+              <div class="prose prose-slate prose-lg max-w-none">
+                <%= if @selected_entry && @selected_entry.id == entry.id do %>
+                  <!-- Show full content when selected -->
+                  <div>
+                    <%= raw(Earmark.as_html!(entry.content)) %>
+                  </div>
+                <% else %>
+                  <!-- Show truncated content when not selected -->
+                  <div class="line-clamp-10">
+                    <%= raw(Earmark.as_html!(String.slice(entry.content, 0, 1000))) %>
+                  </div>
+                  <%= if String.length(entry.content) > 1000 do %>
+                    <div class="mt-3 text-sm text-slate-400 hover:text-slate-600 transition-colors duration-200">
+                      <span>Click to read more →</span>
+                    </div>
+                  <% end %>
+                <% end %>
+              </div>
+
+              <!-- Tags -->
+              <%= if entry.tags && length(entry.tags) > 0 do %>
+                <div class="flex flex-wrap gap-2 mt-4">
+                  <%= for tag <- entry.tags do %>
+                    <span class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                      #<%= tag %>
+                    </span>
+                  <% end %>
+                </div>
+              <% end %>
+            </article>
+          <% end %>
+          </div>
+        </div>
+
+        <%= if length(@journal_entries) == 0 do %>
+          <div class="text-center py-20">
+            <h3 class="text-lg font-medium text-slate-600 mb-2">No journal entries yet</h3>
+            <p class="text-slate-500 mb-6">Get started by creating your first entry.</p>
+            <.link navigate="/" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-200">
+              Create Entry
+            </.link>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Right Column - Related Todos -->
+    <%= if @selected_entry do %>
+      <div class="w-80 bg-slate-50 border-l border-slate-200 overflow-y-auto">
+        <div class="p-6">
+          <h3 class="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-4">
+            Related Todos
+          </h3>
+          
+          <%= if length(@related_todos) > 0 do %>
+            <div class="space-y-4">
+              <%= for todo <- @related_todos do %>
+                <div class="pb-4 border-b border-slate-200 last:border-b-0">
+                  <div class="flex items-start justify-between">
+                    <div class="flex-1 min-w-0">
+                      <h4 class="font-medium text-slate-900 mb-1 leading-tight"><%= todo.title %></h4>
+                      <%= if todo.description do %>
+                        <p class="text-sm text-slate-600 mb-2 leading-relaxed">
+                          <%= String.slice(todo.description, 0, 100) %><%= if String.length(todo.description) > 100, do: "..." %>
+                        </p>
+                      <% end %>
+                      
+                      <!-- Priority and Status -->
+                      <div class="flex items-center space-x-2 text-xs">
+                        <%= if todo.priority do %>
+                          <span class={[
+                            "px-2 py-1 rounded font-medium",
+                            case todo.priority do
+                              "high" -> "bg-red-100 text-red-700"
+                              "medium" -> "bg-amber-100 text-amber-700"
+                              "low" -> "bg-emerald-100 text-emerald-700"
+                              _ -> "bg-slate-100 text-slate-700"
+                            end
+                          ]}>
+                            <%= String.capitalize(todo.priority) %>
+                          </span>
+                        <% end %>
+                        
+                        <%= if todo.completed do %>
+                          <span class="px-2 py-1 rounded font-medium bg-emerald-100 text-emerald-700">
+                            ✓ Complete
+                          </span>
+                        <% end %>
+                      </div>
+                    </div>
+                    
+                    <!-- Link to todo -->
+                    <.link navigate={"/todo/#{todo.id}"} class="ml-3 p-1 text-slate-400 hover:text-slate-600">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                      </svg>
+                    </.link>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
+            <div class="text-center py-8">
+              <p class="text-sm text-slate-500">No todos extracted from this entry</p>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<style>
+  .line-clamp-10 {
+    display: -webkit-box;
+    -webkit-line-clamp: 10;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  
+  /* Enhance prose styling within timeline entries */
+  .timeline-prose h1, .timeline-prose h2, .timeline-prose h3 {
+    @apply text-slate-800 font-bold leading-tight;
+  }
+  
+  .timeline-prose p {
+    @apply text-slate-700 leading-relaxed mb-3;
+  }
+  
+  .timeline-prose ul, .timeline-prose ol {
+    @apply text-slate-700 space-y-1;
+  }
+  
+  .timeline-prose blockquote {
+    @apply border-l-4 border-blue-200 pl-4 italic text-slate-600 bg-blue-50/30 py-2 rounded-r;
+  }
+  
+  .timeline-prose code {
+    @apply bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+  
+  .timeline-prose pre {
+    @apply bg-slate-100 p-4 rounded-lg overflow-x-auto;
+  }
+  
+  /* Custom scrollbar for timeline */
+  .timeline-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .timeline-scroll::-webkit-scrollbar-track {
+    @apply bg-slate-100 rounded-full;
+  }
+  
+  .timeline-scroll::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full hover:bg-slate-400;
+  }
+</style>

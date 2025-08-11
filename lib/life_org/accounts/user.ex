@@ -10,6 +10,7 @@ defmodule LifeOrg.Accounts.User do
     field :hashed_password, :string, redact: true
     field :current_password, :string, virtual: true, redact: true
     field :confirmed_at, :utc_datetime
+    field :timezone, :string, default: "America/Chicago"
 
     has_many :workspaces, Workspace
 
@@ -161,5 +162,22 @@ defmodule LifeOrg.Accounts.User do
     else
       add_error(changeset, :current_password, "is not valid")
     end
+  end
+
+  @doc """
+  A user changeset for updating timezone settings.
+  """
+  def timezone_changeset(user, attrs) do
+    # Use a hardcoded list of common timezones to avoid Tzdata dependency issues
+    valid_timezones = [
+      "America/New_York", "America/Chicago", "America/Denver", 
+      "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu", 
+      "America/Phoenix"
+    ]
+    
+    user
+    |> cast(attrs, [:timezone])
+    |> validate_required([:timezone])
+    |> validate_inclusion(:timezone, valid_timezones)
   end
 end
