@@ -4,6 +4,10 @@ defmodule LifeOrgWeb.JournalTimelineLive do
   on_mount {LifeOrgWeb.UserAuth, :ensure_authenticated}
 
   alias LifeOrg.WorkspaceService
+  alias LifeOrg.AIHandler
+  alias LifeOrg.ConversationService
+  alias LifeOrg.Repo
+  alias LifeOrg.JournalEntry
 
   @impl true
   def mount(_params, _session, socket) do
@@ -15,14 +19,25 @@ defmodule LifeOrgWeb.JournalTimelineLive do
     workspaces = WorkspaceService.list_workspaces(current_user.id)
     journal_entries = WorkspaceService.list_journal_entries(current_workspace.id)
 
-    # Auto-select first entry if any exist
-    {selected_entry, related_todos} = 
+    # Auto-select first entry if any exist and load its chat
+    {selected_entry, related_todos, chat_data} = 
       case journal_entries do
-        [] -> {nil, []}
+        [] -> 
+          {nil, [], {false, nil, nil, [], [], nil}}
         [first_entry | _] -> 
           todos = WorkspaceService.list_journal_todos(first_entry.id)
-          {first_entry, todos}
+          conversations = ConversationService.list_journal_conversations(first_entry.id)
+          messages =
+            case conversations do
+              [] -> []
+              [conversation | _] ->
+                conversation.chat_messages
+                |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+            end
+          {first_entry, todos, {true, first_entry.id, first_entry, conversations, List.first(conversations), messages}}
       end
+    
+    {show_chat, chat_journal_id, chat_journal_entry, conversations, current_conversation, chat_messages} = chat_data
 
     {:ok,
      socket
@@ -31,21 +46,91 @@ defmodule LifeOrgWeb.JournalTimelineLive do
      |> assign(:journal_entries, journal_entries)
      |> assign(:selected_entry, selected_entry)
      |> assign(:related_todos, related_todos)
-     |> assign(:user_timezone, current_user.timezone || "America/Chicago")}
+     |> assign(:user_timezone, current_user.timezone || "America/Chicago")
+     |> assign(:show_add_form, false)
+     |> assign(:processing_journal_todos, false)
+     |> assign(:show_journal_chat, show_chat)
+     |> assign(:chat_journal_id, chat_journal_id)
+     |> assign(:chat_journal_entry, chat_journal_entry)
+     |> assign(:journal_chat_messages, chat_messages || [])
+     |> assign(:journal_conversations, conversations || [])
+     |> assign(:current_journal_conversation, current_conversation)
+     |> assign(:show_todos_section, false)
+     |> assign(:todos_section_journal_id, nil)}
+  end
+
+  @impl true
+  def handle_event("toggle_add_form", _params, socket) do
+    {:noreply, assign(socket, :show_add_form, !socket.assigns.show_add_form)}
+  end
+
+  @impl true
+  def handle_event("create_journal_entry", %{"journal_entry" => params}, socket) do
+    case WorkspaceService.create_journal_entry(params, socket.assigns.current_workspace.id) do
+      {:ok, entry} ->
+        # Refresh journal entries to include the new one
+        journal_entries = WorkspaceService.list_journal_entries(socket.assigns.current_workspace.id)
+        
+        # Extract todos from journal entry in background
+        parent_pid = self()
+        workspace_id = socket.assigns.current_workspace.id
+        existing_todos = WorkspaceService.list_todos(workspace_id)
+        
+        Task.start(fn ->
+          case AIHandler.extract_todos_from_journal(entry.content, existing_todos, entry.id, workspace_id, true) do
+            {:ok, todo_actions, conversation_messages} ->
+              send(parent_pid, {:extracted_todos, todo_actions, workspace_id, entry.id, conversation_messages})
+            {:ok, todo_actions} ->
+              # Fallback for backward compatibility
+              send(parent_pid, {:extracted_todos, todo_actions, workspace_id, entry.id, []})
+          end
+        end)
+        
+        {:noreply,
+         socket
+         |> assign(:journal_entries, journal_entries)
+         |> assign(:show_add_form, false)
+         |> assign(:processing_journal_todos, true)
+         |> push_event("clear_timeline_journal_form", %{})
+         |> put_flash(:info, "Journal entry created successfully")}
+         
+      {:error, %Ecto.Changeset{} = _changeset} ->
+        {:noreply, put_flash(socket, :error, "Error creating journal entry")}
+    end
   end
 
   @impl true
   def handle_event("select_entry", %{"id" => id}, socket) do
-    selected_entry = Enum.find(socket.assigns.journal_entries, &(&1.id == String.to_integer(id)))
+    entry_id = String.to_integer(id)
+    selected_entry = Enum.find(socket.assigns.journal_entries, &(&1.id == entry_id))
     
     # Get todos extracted from this journal entry
-    related_todos = WorkspaceService.list_journal_todos(String.to_integer(id))
+    related_todos = WorkspaceService.list_journal_todos(entry_id)
+    
+    # Automatically load chat for the selected entry
+    conversations = ConversationService.list_journal_conversations(entry_id)
+    messages =
+      case conversations do
+        [] ->
+          []
+        [conversation | _] ->
+          conversation.chat_messages
+          |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+      end
     
     {:noreply,
      socket
      |> assign(:selected_entry, selected_entry)
      |> assign(:related_todos, related_todos)
-     |> push_event("scroll_to_entry", %{entry_id: String.to_integer(id)})}
+     |> assign(:show_todos_section, false)
+     |> assign(:todos_section_journal_id, nil)
+     |> assign(:show_journal_chat, true)
+     |> assign(:chat_journal_id, entry_id)
+     |> assign(:chat_journal_entry, selected_entry)
+     |> assign(:journal_conversations, conversations)
+     |> assign(:current_journal_conversation, List.first(conversations))
+     |> assign(:journal_chat_messages, messages)
+     |> push_event("scroll_to_entry", %{entry_id: entry_id})}
   end
 
   @impl true
@@ -58,10 +143,29 @@ defmodule LifeOrgWeb.JournalTimelineLive do
       next_entry ->
         related_todos = WorkspaceService.list_journal_todos(next_entry.id)
         
+        # Load chat for the new entry
+        conversations = ConversationService.list_journal_conversations(next_entry.id)
+        messages =
+          case conversations do
+            [] ->
+              []
+            [conversation | _] ->
+              conversation.chat_messages
+              |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+          end
+        
         {:noreply,
          socket
          |> assign(:selected_entry, next_entry)
          |> assign(:related_todos, related_todos)
+         |> assign(:show_todos_section, false)
+         |> assign(:todos_section_journal_id, nil)
+         |> assign(:show_journal_chat, true)
+         |> assign(:chat_journal_id, next_entry.id)
+         |> assign(:chat_journal_entry, next_entry)
+         |> assign(:journal_conversations, conversations)
+         |> assign(:current_journal_conversation, List.first(conversations))
+         |> assign(:journal_chat_messages, messages)
          |> push_event("scroll_to_entry", %{entry_id: next_entry.id})}
     end
   end
@@ -76,10 +180,29 @@ defmodule LifeOrgWeb.JournalTimelineLive do
       prev_entry ->
         related_todos = WorkspaceService.list_journal_todos(prev_entry.id)
         
+        # Load chat for the new entry
+        conversations = ConversationService.list_journal_conversations(prev_entry.id)
+        messages =
+          case conversations do
+            [] ->
+              []
+            [conversation | _] ->
+              conversation.chat_messages
+              |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+          end
+        
         {:noreply,
          socket
          |> assign(:selected_entry, prev_entry)
          |> assign(:related_todos, related_todos)
+         |> assign(:show_todos_section, false)
+         |> assign(:todos_section_journal_id, nil)
+         |> assign(:show_journal_chat, true)
+         |> assign(:chat_journal_id, prev_entry.id)
+         |> assign(:chat_journal_entry, prev_entry)
+         |> assign(:journal_conversations, conversations)
+         |> assign(:current_journal_conversation, List.first(conversations))
+         |> assign(:journal_chat_messages, messages)
          |> push_event("scroll_to_entry", %{entry_id: prev_entry.id})}
     end
   end
@@ -121,6 +244,176 @@ defmodule LifeOrgWeb.JournalTimelineLive do
        |> assign(:journal_entries, journal_entries)
        |> assign(:selected_entry, nil)
        |> assign(:related_todos, [])}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_journal_chat", %{"id" => journal_id}, socket) do
+    journal_id_int = String.to_integer(journal_id)
+    
+    # Always open chat for this journal entry and clear todos section
+    journal_entry = Repo.get!(JournalEntry, journal_id_int)
+    conversations = ConversationService.list_journal_conversations(journal_id_int)
+    
+    # Load messages from most recent conversation if exists
+    messages =
+      case conversations do
+        [] ->
+          []
+        [conversation | _] ->
+          conversation.chat_messages
+          |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+      end
+    
+    socket =
+      socket
+      |> assign(:show_todos_section, false)
+      |> assign(:todos_section_journal_id, nil)
+      |> assign(:show_journal_chat, true)
+      |> assign(:chat_journal_id, journal_id_int)
+      |> assign(:chat_journal_entry, journal_entry)
+      |> assign(:journal_conversations, conversations)
+      |> assign(:current_journal_conversation, List.first(conversations))
+      |> assign(:journal_chat_messages, messages)
+    
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_todos_section", _params, socket) do
+    selected_entry = socket.assigns.selected_entry
+    
+    {:noreply,
+     socket
+     |> assign(:show_todos_section, true)
+     |> assign(:todos_section_journal_id, if(selected_entry, do: selected_entry.id, else: nil))
+     |> assign(:show_journal_chat, false)
+     |> assign(:chat_journal_id, nil)
+     |> assign(:chat_journal_entry, nil)
+     |> assign(:journal_chat_messages, [])
+     |> assign(:journal_conversations, [])
+     |> assign(:current_journal_conversation, nil)}
+  end
+
+  @impl true
+  def handle_event("send_journal_chat_message", %{"journal-id" => journal_id, "message" => message}, socket) do
+    journal_id_int = String.to_integer(journal_id)
+    journal_entry = Repo.get!(JournalEntry, journal_id_int)
+    workspace_id = socket.assigns.current_workspace.id
+    
+    # Get or create conversation for this journal entry
+    conversation =
+      case socket.assigns[:current_journal_conversation] do
+        nil ->
+          {:ok, conv} =
+            ConversationService.get_or_create_journal_conversation(
+              journal_id_int,
+              workspace_id,
+              message
+            )
+          conv
+        conv ->
+          conv
+      end
+    
+    # Save user message
+    {:ok, _user_msg} =
+      ConversationService.add_message_to_conversation(conversation.id, "user", message)
+    
+    # Show user message immediately with loading indicator
+    current_messages = socket.assigns[:journal_chat_messages] || []
+    loading_message = %{role: "assistant", content: "Thinking...", loading: true}
+    messages_with_user_and_loading =
+      current_messages ++ [%{role: "user", content: message}, loading_message]
+    
+    socket =
+      socket
+      |> assign(:journal_chat_messages, messages_with_user_and_loading)
+      |> assign(:processing_message, true)
+    
+    # Start AI processing in background
+    parent_pid = self()
+    conversation_history = ConversationService.get_conversation_messages_for_ai(conversation.id)
+    
+    Task.start(fn ->
+      # Get current todos and journal entries for AI context
+      all_todos = WorkspaceService.list_todos(workspace_id)
+      related_todos = WorkspaceService.list_journal_todos(journal_id_int)
+      journal_entries = WorkspaceService.list_journal_entries(workspace_id)
+      
+      case AIHandler.process_journal_message(
+             message,
+             journal_entry,
+             related_todos,
+             all_todos,
+             journal_entries,
+             conversation_history,
+             workspace_id
+           ) do
+        {:ok, response, tool_actions} ->
+          send(parent_pid, {:journal_ai_response, response, tool_actions, conversation.id, journal_id_int})
+        {:error, reason} ->
+          send(parent_pid, {:journal_ai_response, "I'm sorry, I encountered an error: #{reason}", [], conversation.id, journal_id_int})
+      end
+    end)
+    
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("switch_journal_conversation", %{"journal-id" => _journal_id, "value" => conversation_id}, socket) do
+    conversation_id_int = String.to_integer(conversation_id)
+    # Find the conversation and load its messages
+    conversation = ConversationService.get_conversation_with_messages(conversation_id_int)
+    
+    messages = 
+      conversation.chat_messages
+      |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+    
+    {:noreply,
+     socket
+     |> assign(:current_journal_conversation, conversation)
+     |> assign(:journal_chat_messages, messages)}
+  end
+
+  @impl true
+  def handle_info({:journal_ai_response, response, _tool_actions, conversation_id, journal_id}, socket) do
+    # Only save assistant response to database if there's actual content
+    if String.trim(response) != "" do
+      {:ok, _assistant_message} =
+        ConversationService.add_message_to_conversation(
+          conversation_id,
+          "assistant",
+          response
+        )
+    end
+    
+    # Only update if this is for the current journal chat
+    if socket.assigns[:chat_journal_id] == journal_id do
+      # Load fresh messages from database
+      conversation_with_messages =
+        ConversationService.get_conversation_with_messages(conversation_id)
+      
+      display_messages = 
+        conversation_with_messages.chat_messages
+        |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+      
+      {:noreply,
+       socket
+       |> assign(:journal_chat_messages, display_messages)
+       |> assign(:processing_message, false)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:extracted_todos, _todo_actions, workspace_id, _journal_entry_id, _conversation_messages}, socket) do
+    # Only update if this is for the current workspace
+    if workspace_id == socket.assigns.current_workspace.id do
+      {:noreply, assign(socket, :processing_journal_todos, false)}
     else
       {:noreply, socket}
     end

@@ -84,8 +84,20 @@
                     else: "bg-slate-300 group-hover:bg-slate-400")
                 ]}></div>
 
-                <!-- Entry number - subtle -->
-                <div class="flex justify-end mb-2">
+                <!-- Entry number and actions - subtle -->
+                <div class="flex justify-between items-center mb-2">
+                  <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <button
+                      phx-click="toggle_journal_chat"
+                      phx-value-id={entry.id}
+                      class="p-1 text-purple-400 hover:text-purple-600 transition-colors"
+                      title="Chat about this entry"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                      </svg>
+                    </button>
+                  </div>
                   <div class="text-xs font-mono text-slate-300">
                     #<%= length(@journal_entries) - index %>
                   </div>
@@ -138,70 +150,277 @@
       </div>
     </div>
 
-    <!-- Right Column - Related Todos -->
+    <!-- Right Column - Related Todos and Chat -->
     <%= if @selected_entry do %>
       <div class="w-80 bg-slate-50 border-l border-slate-200 overflow-y-auto">
         <div class="p-6">
-          <h3 class="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-4">
-            Related Todos
-          </h3>
-          
-          <%= if length(@related_todos) > 0 do %>
-            <div class="space-y-4">
-              <%= for todo <- @related_todos do %>
-                <div class="pb-4 border-b border-slate-200 last:border-b-0">
-                  <div class="flex items-start justify-between">
-                    <div class="flex-1 min-w-0">
-                      <h4 class="font-medium text-slate-900 mb-1 leading-tight"><%= todo.title %></h4>
-                      <%= if todo.description do %>
-                        <p class="text-sm text-slate-600 mb-2 leading-relaxed">
-                          <%= String.slice(todo.description, 0, 100) %><%= if String.length(todo.description) > 100, do: "..." %>
-                        </p>
-                      <% end %>
-                      
-                      <!-- Priority and Status -->
-                      <div class="flex items-center space-x-2 text-xs">
-                        <%= if todo.priority do %>
-                          <span class={[
-                            "px-2 py-1 rounded font-medium",
-                            case todo.priority do
-                              "high" -> "bg-red-100 text-red-700"
-                              "medium" -> "bg-amber-100 text-amber-700"
-                              "low" -> "bg-emerald-100 text-emerald-700"
-                              _ -> "bg-slate-100 text-slate-700"
-                            end
-                          ]}>
-                            <%= String.capitalize(todo.priority) %>
-                          </span>
+          <!-- Section Tabs -->
+          <div class="flex mb-4 border-b border-slate-200">
+            <button
+              phx-click="toggle_journal_chat"
+              phx-value-id={@selected_entry.id}
+              class={[
+                "flex-1 pb-2 text-sm font-medium transition-colors",
+                if(!assigns[:show_todos_section] || assigns[:todos_section_journal_id] != @selected_entry.id,
+                  do: "text-purple-600 border-b-2 border-purple-600",
+                  else: "text-slate-500 hover:text-slate-700")
+              ]}
+            >
+              <div class="flex items-center justify-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                </svg>
+                Chat
+              </div>
+            </button>
+            <button
+              phx-click="show_todos_section"
+              class={[
+                "flex-1 pb-2 text-sm font-medium transition-colors",
+                if(assigns[:show_todos_section] && assigns[:todos_section_journal_id] == @selected_entry.id,
+                  do: "text-slate-900 border-b-2 border-slate-900",
+                  else: "text-slate-500 hover:text-slate-700")
+              ]}
+            >
+              Todos (<%= length(@related_todos) %>)
+            </button>
+          </div>
+
+          <!-- Todos Section -->
+          <%= if assigns[:show_todos_section] && assigns[:todos_section_journal_id] == @selected_entry.id do %>
+            <%= if length(@related_todos) > 0 do %>
+              <div class="space-y-4">
+                <%= for todo <- @related_todos do %>
+                  <div class="pb-4 border-b border-slate-200 last:border-b-0">
+                    <div class="flex items-start justify-between">
+                      <div class="flex-1 min-w-0">
+                        <h4 class="font-medium text-slate-900 mb-1 leading-tight"><%= todo.title %></h4>
+                        <%= if todo.description do %>
+                          <p class="text-sm text-slate-600 mb-2 leading-relaxed">
+                            <%= String.slice(todo.description, 0, 100) %><%= if String.length(todo.description) > 100, do: "..." %>
+                          </p>
                         <% end %>
                         
-                        <%= if todo.completed do %>
-                          <span class="px-2 py-1 rounded font-medium bg-emerald-100 text-emerald-700">
-                            ✓ Complete
-                          </span>
-                        <% end %>
+                        <!-- Priority and Status -->
+                        <div class="flex items-center space-x-2 text-xs">
+                          <%= if todo.priority do %>
+                            <span class={[
+                              "px-2 py-1 rounded font-medium",
+                              case todo.priority do
+                                "high" -> "bg-red-100 text-red-700"
+                                "medium" -> "bg-amber-100 text-amber-700"
+                                "low" -> "bg-emerald-100 text-emerald-700"
+                                _ -> "bg-slate-100 text-slate-700"
+                              end
+                            ]}>
+                              <%= String.capitalize(todo.priority) %>
+                            </span>
+                          <% end %>
+                          
+                          <%= if todo.completed do %>
+                            <span class="px-2 py-1 rounded font-medium bg-emerald-100 text-emerald-700">
+                              ✓ Complete
+                            </span>
+                          <% end %>
+                        </div>
                       </div>
+                      
+                      <!-- Link to todo -->
+                      <.link navigate={"/todo/#{todo.id}"} class="ml-3 p-1 text-slate-400 hover:text-slate-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                        </svg>
+                      </.link>
                     </div>
-                    
-                    <!-- Link to todo -->
-                    <.link navigate={"/todo/#{todo.id}"} class="ml-3 p-1 text-slate-400 hover:text-slate-600">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                      </svg>
-                    </.link>
                   </div>
+                <% end %>
+              </div>
+            <% else %>
+              <div class="text-center py-8">
+                <p class="text-sm text-slate-500">No todos extracted from this entry</p>
+              </div>
+            <% end %>
+          <% end %>
+
+          <!-- Chat Section -->
+          <%= if !assigns[:show_todos_section] || assigns[:todos_section_journal_id] != @selected_entry.id do %>
+            <div class="flex flex-col h-96">
+              <!-- Conversation Selector -->
+              <%= if length(assigns[:journal_conversations] || []) > 1 do %>
+                <div class="mb-4">
+                  <select
+                    phx-change="switch_journal_conversation"
+                    phx-value-journal-id={@chat_journal_id}
+                    class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    value={if assigns[:current_journal_conversation], do: @current_journal_conversation.id, else: ""}
+                  >
+                    <%= for conversation <- assigns[:journal_conversations] || [] do %>
+                      <option value={conversation.id}>
+                        <%= conversation.title %> (<%= length(conversation.chat_messages || []) %> messages)
+                      </option>
+                    <% end %>
+                  </select>
                 </div>
               <% end %>
-            </div>
-          <% else %>
-            <div class="text-center py-8">
-              <p class="text-sm text-slate-500">No todos extracted from this entry</p>
+
+              <!-- Chat Messages -->
+              <div class="flex-1 overflow-y-auto border border-slate-200 rounded-lg bg-white mb-4">
+                <div class="p-4">
+                  <%= if length(assigns[:journal_chat_messages] || []) == 0 do %>
+                    <div class="text-center text-slate-500 py-8">
+                      <svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                      </svg>
+                      <p class="text-sm">Ask about this journal entry</p>
+                    </div>
+                  <% else %>
+                    <div class="space-y-3">
+                      <%= for message <- assigns[:journal_chat_messages] || [] do %>
+                        <div class={["flex", if(message.role == "user", do: "justify-end", else: "justify-start")]}>
+                          <div class={[
+                            "max-w-[85%] px-3 py-2 rounded-lg text-sm",
+                            if(message.role == "user", 
+                              do: "bg-purple-600 text-white", 
+                              else: "bg-slate-100 text-slate-900")
+                          ]}>
+                            <%= if Map.get(message, :loading, false) do %>
+                              <div class="flex items-center">
+                                <svg class="animate-spin -ml-1 mr-2 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <%= message.content %>
+                              </div>
+                            <% else %>
+                              <div class="whitespace-pre-wrap prose prose-sm max-w-none">
+                                <%= raw(Earmark.as_html!(message.content)) %>
+                              </div>
+                            <% end %>
+                          </div>
+                        </div>
+                      <% end %>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+
+              <!-- Chat Input -->
+              <form phx-submit="send_journal_chat_message" phx-value-journal-id={@chat_journal_id} class="flex gap-2">
+                <input
+                  type="text"
+                  name="message"
+                  placeholder="Ask about this entry..."
+                  class="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  required
+                  autocomplete="off"
+                />
+                <button
+                  type="submit"
+                  class="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                  </svg>
+                </button>
+              </form>
             </div>
           <% end %>
         </div>
       </div>
     <% end %>
   </div>
+
+  <!-- Floating Add Journal Entry Button -->
+  <button
+    phx-click="toggle_add_form"
+    class={[
+      "fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all duration-200 z-50",
+      "flex items-center justify-center hover:shadow-xl transform hover:scale-105"
+    ]}
+    title="Add journal entry"
+  >
+    <svg class={[
+      "transition-transform duration-200",
+      if(assigns[:show_add_form], do: "rotate-45", else: "")
+    ]} width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+    </svg>
+  </button>
+
+  <!-- Expandable Add Journal Entry Form -->
+  <%= if assigns[:show_add_form] do %>
+    <div class="fixed inset-0 bg-black/20 z-40" phx-click="toggle_add_form"></div>
+    <div class="fixed bottom-6 right-6 w-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 transform transition-all duration-300 ease-out">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-800">Add Journal Entry</h3>
+          <button 
+            phx-click="toggle_add_form"
+            class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <form id="timeline-journal-form" phx-submit="create_journal_entry" class="space-y-4">
+          <div>
+            <textarea
+              name="journal_entry[content]"
+              placeholder="Write your thoughts..."
+              class="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              required
+            ></textarea>
+          </div>
+          
+          <div>
+            <input
+              type="date"
+              name="journal_entry[entry_date]"
+              value={Date.utc_today() |> Date.to_string()}
+              class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              required
+            />
+          </div>
+          
+          <div class="flex gap-3 pt-2">
+            <button
+              type="button"
+              phx-click="toggle_add_form"
+              class="flex-1 px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              disabled={assigns[:processing_journal_todos] || false}
+            >
+              <%= if assigns[:processing_journal_todos] do %>
+                <span class="flex items-center justify-center">
+                  <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing...
+                </span>
+              <% else %>
+                Add Entry
+              <% end %>
+            </button>
+          </div>
+          
+          <%= if assigns[:processing_journal_todos] do %>
+            <div class="text-sm text-blue-600 text-center">
+              Extracting todos from your journal entry...
+            </div>
+          <% end %>
+        </form>
+      </div>
+    </div>
+  <% end %>
+
 </div>
 
 <style>

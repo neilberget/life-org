@@ -136,6 +136,16 @@ Hooks.GlobalEvents = {
       }
     });
 
+    this.handleEvent("clear_timeline_journal_form", () => {
+      const form = document.getElementById("timeline-journal-form");
+      if (form) {
+        const textarea = form.querySelector('textarea[name="journal_entry[content]"]');
+        const dateInput = form.querySelector('input[name="journal_entry[entry_date]"]');
+        if (textarea) textarea.value = '';
+        if (dateInput) dateInput.value = new Date().toISOString().split('T')[0]; // Reset to today
+      }
+    });
+
     this.handleEvent("show_todo_chat", ({ todo_id }) => {
       const chat = document.getElementById(`todo-chat-${todo_id}`);
       if (chat) {

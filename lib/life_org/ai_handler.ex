@@ -1644,35 +1644,8 @@ defmodule LifeOrg.AIHandler do
   end
 
   defp build_journal_tools_definition(_journal_entry, all_todos, _workspace_id) do
-    # Include the same tools available for todo management plus search
-    todo_tools = build_todo_tools_definition(%{id: nil}, all_todos)
-    
-    # Add journal-specific search tool
-    search_tool = %{
-      name: "search_content",
-      description: "Search through journal entries and todos using semantic similarity",
-      input_schema: %{
-        type: "object",
-        properties: %{
-          query: %{
-            type: "string",
-            description: "The search query to find relevant content"
-          },
-          content_type: %{
-            type: "string", 
-            enum: ["both", "journal_entries", "todos"],
-            description: "Type of content to search (default: both)"
-          },
-          limit: %{
-            type: "integer",
-            description: "Maximum number of results to return (default: 5)"
-          }
-        },
-        required: ["query"]
-      }
-    }
-    
-    todo_tools ++ [search_tool]
+    # Include the same tools available for todo management (which already includes search_content)
+    build_todo_tools_definition(%{id: nil}, all_todos)
   end
 
   defp execute_journal_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id, journal_entry, all_todos) do
