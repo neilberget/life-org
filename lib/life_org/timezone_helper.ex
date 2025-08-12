@@ -14,7 +14,13 @@ defmodule LifeOrg.TimezoneHelper do
     to_user_timezone(datetime, "America/Chicago")
   end
   
-  def to_user_timezone(datetime, timezone) when is_binary(timezone) do
+  def to_user_timezone(%NaiveDateTime{} = naive_datetime, timezone) when is_binary(timezone) do
+    naive_datetime
+    |> DateTime.from_naive!("Etc/UTC")
+    |> to_user_timezone(timezone)
+  end
+
+  def to_user_timezone(%DateTime{} = datetime, timezone) when is_binary(timezone) do
     case DateTime.shift_zone(datetime, timezone) do
       {:ok, converted} -> converted
       {:error, _} -> datetime
