@@ -50,10 +50,12 @@ defmodule LifeOrg.Integrations.Decorators.Asana do
   def match_url(url) do
     case URI.parse(url) do
       %URI{host: host, path: path} when host in ["app.asana.com", "asana.com"] ->
-        # Match task and project URLs
+        # Match task and project URLs with any digit prefix
         path != nil and (
-          Regex.match?(~r|^/0/\d+/\d+|, path) or          # task: /0/projectid/taskid
-          Regex.match?(~r|^/0/projects/\d+|, path)        # project: /0/projects/projectid
+          Regex.match?(~r|^/\d+/\d+/\d+|, path) or                        # task: /<digit>/projectid/taskid
+          Regex.match?(~r|^/\d+/projects/\d+|, path) or                   # project: /<digit>/projects/projectid
+          Regex.match?(~r|^/\d+/.*/project/.*/task/\d+|, path) or        # new format task
+          Regex.match?(~r|^/\d+/.*/project/\d+|, path)                   # new format project
         )
       _ -> false
     end
@@ -99,17 +101,62 @@ defmodule LifeOrg.Integrations.Decorators.Asana do
   end
 
   defp parse_asana_path(path, original_url) do
-    case String.split(path, "/", trim: true) do
-      ["0", _project_id, task_id] ->
-        # Task URL format: /0/projectid/taskid
+    parts = String.split(path, "/", trim: true)
+    
+    case parts do
+      # Format: /<digit>/projectid/taskid or /<digit>/workspace/project/project_id/task/task_id
+      [first | rest] ->
+        if Regex.match?(~r/^\d+$/, first) do
+          parse_asana_path_with_digit_prefix(rest, original_url)
+        else
+          {:error, :unsupported_asana_path}
+        end
+      
+      _ ->
+        {:error, :unsupported_asana_path}
+    end
+  end
+  
+  defp parse_asana_path_with_digit_prefix(rest, original_url) do
+    case rest do
+      # Simple format: projectid/taskid
+      [_project_id, task_id] ->
+        if Regex.match?(~r/^\d+$/, task_id) do
+          {:ok, %{
+            type: :task,
+            id: task_id,
+            url: original_url
+          }}
+        else
+          # Try other patterns
+          parse_asana_path_with_digit_prefix_extended(rest, original_url)
+        end
+      
+      # Simple format: projects/projectid
+      ["projects", project_id | _] ->
+        {:ok, %{
+          type: :project,
+          id: project_id,
+          url: original_url
+        }}
+      
+      _ ->
+        parse_asana_path_with_digit_prefix_extended(rest, original_url)
+    end
+  end
+  
+  defp parse_asana_path_with_digit_prefix_extended(rest, original_url) do
+    case rest do
+      # New format: workspace_id/project/project_id/task/task_id
+      [_workspace_id, "project", _project_id, "task", task_id | _] ->
         {:ok, %{
           type: :task,
           id: task_id,
           url: original_url
         }}
       
-      ["0", "projects", project_id | _] ->
-        # Project URL format: /0/projects/projectid
+      # New format: workspace_id/project/project_id
+      [_workspace_id, "project", project_id | _] ->
         {:ok, %{
           type: :project,
           id: project_id,
