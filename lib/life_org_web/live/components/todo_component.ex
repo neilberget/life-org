@@ -27,8 +27,8 @@ defmodule LifeOrgWeb.Components.TodoComponent do
       |> assign(:completed_count, completed_count)
 
     ~H"""
-    <div class="w-1/2 bg-white overflow-y-auto">
-      <div class="p-6">
+    <div class="w-full md:w-1/2 bg-white overflow-y-auto">
+      <div class="p-4 md:p-6">
         <div class="flex items-center justify-between mb-6">
           <div class="flex items-center gap-3">
             <h2 class="text-2xl font-bold text-gray-800">Todo List</h2>
@@ -104,6 +104,20 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 </span>
               </div>
             <% end %>
+            
+            <%= if Map.get(assigns, :project_filter) do %>
+              <div class="flex items-center gap-2">
+                <span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full flex items-center gap-1">
+                  <%= @project_filter %>
+                  <button
+                    phx-click="clear_project_filter"
+                    class="ml-1 hover:text-green-900"
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+            <% end %>
           </div>
 
           <div class="flex gap-2">
@@ -128,6 +142,21 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 </span>
               </button>
             <% end %>
+            <button
+              phx-click="toggle_compact_todo_view"
+              class={"p-2 rounded-lg transition-colors #{if Map.get(assigns, :compact_todo_view, true), do: "text-purple-600 hover:text-purple-700 hover:bg-purple-50 bg-purple-50", else: "text-gray-500 hover:text-gray-700 hover:bg-gray-100"}"}
+              title={if Map.get(assigns, :compact_todo_view, true), do: "Switch to detailed view", else: "Switch to compact view"}
+            >
+              <%= if Map.get(assigns, :compact_todo_view, true) do %>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                </svg>
+              <% else %>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+              <% end %>
+            </button>
             <button
               phx-click="add_todo"
               class="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
@@ -154,7 +183,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           <.incoming_todos_section todos={@incoming_todos} />
         <% end %>
 
-        <.todo_list todos={@filtered_todos} deleting_todo_id={@deleting_todo_id} />
+        <.todo_list todos={@filtered_todos} deleting_todo_id={@deleting_todo_id} compact_view={Map.get(assigns, :compact_todo_view, true)} />
 
         <!-- Edit Todo Modal -->
         <%= if Map.get(assigns, :editing_todo) do %>
@@ -284,6 +313,24 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               <% end %>
             </div>
           <% end %>
+          <%= if @todo.projects && length(@todo.projects) > 0 do %>
+            <div class="flex flex-wrap gap-1 mt-1">
+              <%= for project <- @todo.projects do %>
+                <button
+                  phx-click="filter_by_project"
+                  phx-value-project={project.name}
+                  class="text-xs px-2 py-1 rounded-full hover:opacity-80 transition-opacity cursor-pointer"
+                  style={"background-color: #{project.color}20; color: #{project.color}; border: 1px solid #{project.color}40;"}
+                  title={"Filter by project: #{project.name}"}
+                >
+                  <%= if project.favicon_url do %>
+                    <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
+                  <% end %>
+                  <%= project.name %>
+                </button>
+              <% end %>
+            </div>
+          <% end %>
         </div>
       </div>
     </div>
@@ -292,9 +339,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
   def todo_list(assigns) do
     ~H"""
-    <div class="space-y-2">
+    <div class="space-y-2" phx-hook="TodoDragDropKeyboard" id="todo-drag-drop">
       <%= for todo <- @todos do %>
-        <.todo_item todo={todo} deleting_todo_id={Map.get(assigns, :deleting_todo_id)} />
+        <.todo_item todo={todo} deleting_todo_id={Map.get(assigns, :deleting_todo_id)} compact_view={Map.get(assigns, :compact_view, true)} />
       <% end %>
     </div>
     """
@@ -302,162 +349,339 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
   def todo_item(assigns) do
     is_being_deleted = Map.get(assigns, :deleting_todo_id) == assigns.todo.id
-    assigns = assign(assigns, :is_being_deleted, is_being_deleted)
+    compact_view = Map.get(assigns, :compact_view, true)
+    assigns = assigns
+      |> assign(:is_being_deleted, is_being_deleted)
+      |> assign(:compact_view, compact_view)
 
     ~H"""
-    <div class={"flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg group #{if @todo.current, do: "bg-green-50 border-l-4 border-green-500", else: ""}"}>
-      <input
-        type="checkbox"
-        checked={@todo.completed}
-        phx-click="toggle_todo"
-        phx-value-id={@todo.id}
-        class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-      />
-      <div
-        class="flex-1 cursor-pointer"
-        phx-click="view_todo"
-        phx-value-id={@todo.id}
+    <%= if @compact_view do %>
+      <!-- Compact View -->
+      <div 
+        class={"flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded group #{if @todo.current, do: "bg-green-50 border-l-2 border-green-500", else: ""}"} 
+        data-todo-item 
+        data-todo-id={@todo.id}
       >
-        <div class="flex justify-between items-start">
-          <h4 class={"font-medium #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
-            <%= @todo.title %>
-          </h4>
-          <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onclick={"event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + '/todo/#{@todo.id}').then(() => { 
-                const btn = this;
-                const originalIcon = btn.innerHTML;
-                btn.innerHTML = '<svg class=\"h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"></path></svg>';
-                btn.classList.remove('text-gray-500', 'hover:text-gray-700');
-                btn.classList.add('text-green-500');
-                setTimeout(() => {
-                  btn.innerHTML = originalIcon;
-                  btn.classList.add('text-gray-500', 'hover:text-gray-700');
-                  btn.classList.remove('text-green-500');
-                }, 1500);
-              }).catch(() => alert('Failed to copy link'));"}
-              class="text-gray-500 hover:text-gray-700"
-              title="Copy link to todo"
+        <input
+          type="checkbox"
+          checked={@todo.completed}
+          phx-click="toggle_todo"
+          phx-value-id={@todo.id}
+          class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 todo-checkbox"
+        />
+        
+        <div class="flex-1 min-w-0">
+          <div class="truncate flex items-center">
+            <!-- Project prefix if exists -->
+            <%= if @todo.projects && length(@todo.projects) > 0 do %>
+              <%= for project <- Enum.take(@todo.projects, 1) do %>
+                <button
+                  phx-click="filter_by_project"
+                  phx-value-project={project.name}
+                  class="text-xs font-medium px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer mr-1 flex-shrink-0"
+                  style={"background-color: #{project.color}20; color: #{project.color};"}
+                  title={"Filter by project: #{project.name}"}
+                >
+                  <%= if project.favicon_url do %>
+                    <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
+                  <% end %>
+                  <%= project.name %>
+                </button>
+              <% end %>
+              <%= if length(@todo.projects) > 1 do %>
+                <span class="text-xs text-gray-400 mr-1 flex-shrink-0">+<%= length(@todo.projects) - 1 %></span>
+              <% end %>
+            <% end %>
+            
+            <span 
+              class={"text-sm #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"} cursor-pointer truncate"}
+              phx-click="view_todo"
+              phx-value-id={@todo.id}
             >
-              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+              <%= @todo.title %>
+            </span>
+            
+            <!-- Tags -->
+            <%= if @todo.tags && length(@todo.tags) > 0 do %>
+              <span class="ml-1 flex-shrink-0">
+                <%= for tag <- Enum.take(@todo.tags, 2) do %>
+                  <button
+                    phx-click="filter_by_tag"
+                    phx-value-tag={tag}
+                    class="text-xs text-blue-600 hover:text-blue-800 transition-colors cursor-pointer ml-0.5"
+                    title={"Filter by ##{tag}"}
+                  >
+                    #<%= tag %>
+                  </button>
+                <% end %>
+                <%= if length(@todo.tags) > 2 do %>
+                  <span class="text-xs text-gray-400 ml-0.5">+<%= length(@todo.tags) - 2 %></span>
+                <% end %>
+              </span>
+            <% end %>
+            
+            <!-- Other metadata -->
+            <span class="text-xs text-gray-500 ml-2 space-x-1 flex-shrink-0">
+              <button
+                phx-click="cycle_todo_priority"
+                phx-value-id={@todo.id}
+                class="inline-block hover:scale-125 transition-transform cursor-pointer"
+                title={"Priority: #{@todo.priority || "medium"} (click to change)"}
+              >
+                <span class={"inline-block w-2 h-2 rounded-full #{priority_dot_color(@todo.priority)}"}></span>
+              </button>
+              <%= if @todo.due_date do %>
+                <span>📅</span>
+              <% end %>
+              <%= if @todo.comment_count && @todo.comment_count > 0 do %>
+                <span>💬<%= @todo.comment_count %></span>
+              <% end %>
+            </span>
+          </div>
+        </div>
+
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()">
+          <%= if @todo.current do %>
+            <button
+              phx-click="stop_todo"
+              phx-value-id={@todo.id}
+              class="text-orange-500 hover:text-orange-700"
+              title="Stop working"
+            >
+              <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
               </svg>
             </button>
-            <%= if @todo.current do %>
+          <% else %>
+            <button
+              phx-click="start_todo"
+              phx-value-id={@todo.id}
+              class="text-green-500 hover:text-green-700"
+              title="Start working"
+            >
+              <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          <% end %>
+
+          <%= if @is_being_deleted do %>
+            <button
+              phx-click="confirm_delete_todo"
+              phx-value-id={@todo.id}
+              class="text-red-600 hover:text-red-800"
+              title="Confirm delete"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+              </svg>
+            </button>
+            <button
+              phx-click="cancel_delete_todo"
+              class="text-gray-500 hover:text-gray-700"
+              title="Cancel"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          <% else %>
+            <button
+              phx-click="show_delete_confirmation"
+              phx-value-id={@todo.id}
+              class="text-red-500 hover:text-red-700"
+              title="Delete"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          <% end %>
+        </div>
+      </div>
+    <% else %>
+      <!-- Detailed View (Original) -->
+      <div 
+        class={"flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg group #{if @todo.current, do: "bg-green-50 border-l-4 border-green-500", else: ""}"} 
+        data-todo-item 
+        data-todo-id={@todo.id}
+      >
+        <input
+          type="checkbox"
+          checked={@todo.completed}
+          phx-click="toggle_todo"
+          phx-value-id={@todo.id}
+          class="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 todo-checkbox"
+        />
+        <div
+          class="flex-1 cursor-pointer"
+          phx-click="view_todo"
+          phx-value-id={@todo.id}
+        >
+          <div class="flex justify-between items-start">
+            <h4 class={"font-medium #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
+              <%= @todo.title %>
+            </h4>
+            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
-                phx-click="stop_todo"
-                phx-value-id={@todo.id}
-                class="text-orange-500 hover:text-orange-700"
-                title="Stop working on this"
+                onclick={"event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + '/todo/#{@todo.id}').then(() => { 
+                  const btn = this;
+                  const originalIcon = btn.innerHTML;
+                  btn.innerHTML = '<svg class=\"h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"></path></svg>';
+                  btn.classList.remove('text-gray-500', 'hover:text-gray-700');
+                  btn.classList.add('text-green-500');
+                  setTimeout(() => {
+                    btn.innerHTML = originalIcon;
+                    btn.classList.add('text-gray-500', 'hover:text-gray-700');
+                    btn.classList.remove('text-green-500');
+                  }, 1500);
+                }).catch(() => alert('Failed to copy link'));"}
+                class="text-gray-500 hover:text-gray-700"
+                title="Copy link to todo"
               >
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                 </svg>
               </button>
-            <% else %>
-              <button
-                phx-click="start_todo"
-                phx-value-id={@todo.id}
-                class="text-green-500 hover:text-green-700"
-                title="Start working on this"
-              >
-                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
-                </svg>
-              </button>
-            <% end %>
-            <button
-              phx-click="edit_todo"
-              phx-value-id={@todo.id}
-              class="text-blue-500 hover:text-blue-700"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-              </svg>
-            </button>
-
-            <%= if @is_being_deleted do %>
-              <!-- Confirmation buttons when delete is clicked -->
-              <div class="flex gap-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+              <%= if @todo.current do %>
                 <button
-                  phx-click="confirm_delete_todo"
+                  phx-click="stop_todo"
                   phx-value-id={@todo.id}
-                  class="text-red-600 hover:text-red-800 flex items-center gap-1"
-                  title="Confirm delete"
+                  class="text-orange-500 hover:text-orange-700"
+                  title="Stop working on this"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                   </svg>
-                  <span class="text-xs">Delete</span>
                 </button>
+              <% else %>
                 <button
-                  phx-click="cancel_delete_todo"
-                  class="text-gray-500 hover:text-gray-700"
-                  title="Cancel delete"
+                  phx-click="start_todo"
+                  phx-value-id={@todo.id}
+                  class="text-green-500 hover:text-green-700"
+                  title="Start working on this"
+                >
+                  <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                  </svg>
+                </button>
+              <% end %>
+              <button
+                phx-click="edit_todo"
+                phx-value-id={@todo.id}
+                class="text-blue-500 hover:text-blue-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                </svg>
+              </button>
+
+              <%= if @is_being_deleted do %>
+                <!-- Confirmation buttons when delete is clicked -->
+                <div class="flex gap-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+                  <button
+                    phx-click="confirm_delete_todo"
+                    phx-value-id={@todo.id}
+                    class="text-red-600 hover:text-red-800 flex items-center gap-1"
+                    title="Confirm delete"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                    </svg>
+                    <span class="text-xs">Delete</span>
+                  </button>
+                  <button
+                    phx-click="cancel_delete_todo"
+                    class="text-gray-500 hover:text-gray-700"
+                    title="Cancel delete"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              <% else %>
+                <!-- Normal delete button -->
+                <button
+                  phx-click="show_delete_confirmation"
+                  phx-value-id={@todo.id}
+                  class="text-red-500 hover:text-red-700"
+                  title="Delete todo"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
                   </svg>
                 </button>
+              <% end %>
+            </div>
+          </div>
+          <%= if @todo.description && String.trim(@todo.description) != "" do %>
+            <div class="text-sm text-gray-600 mt-1">
+              <div class="truncate">
+                <%= truncate_description(@todo.description) %>
               </div>
-            <% else %>
-              <!-- Normal delete button -->
-              <button
-                phx-click="show_delete_confirmation"
-                phx-value-id={@todo.id}
-                class="text-red-500 hover:text-red-700"
-                title="Delete todo"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </div>
+          <% end %>
+          <div class="flex items-center gap-2 mt-2">
+            <button
+              phx-click="cycle_todo_priority"
+              phx-value-id={@todo.id}
+              class="hover:opacity-80 transition-opacity cursor-pointer"
+              title={"Priority: #{@todo.priority || "medium"} (click to change)"}
+            >
+              <span class={"text-xs px-2 py-1 rounded-full #{priority_class(@todo.priority)}"}>
+                <%= @todo.priority %>
+              </span>
+            </button>
+            <%= if @todo.due_date do %>
+              <span class="text-xs text-gray-500">
+                📅 <%= format_due_datetime(@todo.due_date, @todo.due_time, Map.get(assigns, :user_timezone)) %>
+              </span>
+            <% end %>
+            <%= if @todo.comment_count && @todo.comment_count > 0 do %>
+              <span class="text-xs text-gray-500 flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
                 </svg>
-              </button>
+                <%= @todo.comment_count %>
+              </span>
+            <% end %>
+            <%= if @todo.tags && length(@todo.tags) > 0 do %>
+              <div class="flex flex-wrap gap-1">
+                <%= for tag <- @todo.tags do %>
+                  <button
+                    phx-click="filter_by_tag"
+                    phx-value-tag={tag}
+                    class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors cursor-pointer"
+                    title={"Filter by ##{tag}"}
+                  >
+                    #<%= tag %>
+                  </button>
+                <% end %>
+              </div>
+            <% end %>
+            <%= if @todo.projects && length(@todo.projects) > 0 do %>
+              <div class="flex flex-wrap gap-1 mt-1">
+                <%= for project <- @todo.projects do %>
+                  <button
+                    phx-click="filter_by_project"
+                    phx-value-project={project.name}
+                    class="text-xs px-2 py-1 rounded-full hover:opacity-80 transition-opacity cursor-pointer"
+                    style={"background-color: #{project.color}20; color: #{project.color}; border: 1px solid #{project.color}40;"}
+                    title={"Filter by project: #{project.name}"}
+                  >
+                    <%= if project.favicon_url do %>
+                    <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
+                  <% end %>
+                  <%= project.name %>
+                  </button>
+                <% end %>
+              </div>
             <% end %>
           </div>
         </div>
-        <%= if @todo.description && String.trim(@todo.description) != "" do %>
-          <div class="text-sm text-gray-600 mt-1">
-            <div class="truncate">
-              <%= truncate_description(@todo.description) %>
-            </div>
-          </div>
-        <% end %>
-        <div class="flex items-center gap-2 mt-2">
-          <%= if @todo.priority do %>
-            <span class={"text-xs px-2 py-1 rounded-full #{priority_class(@todo.priority)}"}>
-              <%= @todo.priority %>
-            </span>
-          <% end %>
-          <%= if @todo.due_date do %>
-            <span class="text-xs text-gray-500">
-              📅 <%= format_due_datetime(@todo.due_date, @todo.due_time, Map.get(assigns, :user_timezone)) %>
-            </span>
-          <% end %>
-          <%= if @todo.comment_count && @todo.comment_count > 0 do %>
-            <span class="text-xs text-gray-500 flex items-center gap-1">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-              </svg>
-              <%= @todo.comment_count %>
-            </span>
-          <% end %>
-          <%= if @todo.tags && length(@todo.tags) > 0 do %>
-            <div class="flex flex-wrap gap-1">
-              <%= for tag <- @todo.tags do %>
-                <button
-                  phx-click="filter_by_tag"
-                  phx-value-tag={tag}
-                  class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors cursor-pointer"
-                  title={"Filter by ##{tag}"}
-                >
-                  #<%= tag %>
-                </button>
-              <% end %>
-            </div>
-          <% end %>
-        </div>
       </div>
-    </div>
+    <% end %>
     """
   end
 
@@ -476,10 +700,26 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         ""
       end
 
+    # Get all unique projects from workspace for autocomplete
+    workspace_id = assigns[:workspace_id]
+    workspace_projects = if workspace_id do
+      # Handle both integer and string workspace_id
+      id = if is_binary(workspace_id), do: String.to_integer(workspace_id), else: workspace_id
+      LifeOrg.Projects.list_projects(id)
+    else
+      # Fallback: try to get from todo's workspace_id
+      if assigns.todo && assigns.todo.workspace_id do
+        LifeOrg.Projects.list_projects(assigns.todo.workspace_id)
+      else
+        []
+      end
+    end
+
     assigns =
       assigns
       |> assign(:due_date_string, due_date)
       |> assign(:due_time_string, due_time)
+      |> assign(:workspace_projects, workspace_projects)
 
     ~H"""
     <form phx-submit="update_todo" phx-value-id={@todo.id}>
@@ -516,6 +756,45 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p class="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Projects</label>
+          
+          <%= if length(@workspace_projects) > 0 do %>
+            <div class="mb-3 p-3 bg-gray-50 rounded-lg">
+              <p class="text-xs text-gray-600 mb-2">Select existing projects:</p>
+              <div class="flex flex-wrap gap-2">
+                <%= for project <- @workspace_projects do %>
+                  <% is_selected = @todo.projects && Enum.any?(@todo.projects, & &1.id == project.id) %>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name={"todo[existing_projects][]"}
+                      value={project.name}
+                      checked={is_selected}
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span class="text-sm flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full" style={"background-color: #{project.color}"}></span>
+                      <%= if project.favicon_url do %>
+                    <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
+                  <% end %>
+                  <%= project.name %>
+                    </span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+          
+          <input
+            type="text"
+            name="todo[new_projects]"
+            placeholder="Add new projects (comma-separated)"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p class="text-xs text-gray-500 mt-1">Create new projects by typing their names</p>
         </div>
 
         <div class="flex gap-4">
@@ -573,6 +852,25 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   end
 
   def add_todo_form(assigns) do
+    # Get all unique projects from workspace for selection
+    workspace_id = assigns[:workspace_id]
+    workspace_projects = if workspace_id do
+      # Handle both integer and string workspace_id
+      id = if is_binary(workspace_id), do: String.to_integer(workspace_id), else: workspace_id
+      LifeOrg.Projects.list_projects(id)
+    else
+      []
+    end
+
+    # Extract defaults from assigns
+    defaults = Map.get(assigns, :defaults, %{})
+    tag_filter = Map.get(defaults, :tag_filter)
+    project_filter = Map.get(defaults, :project_filter)
+
+    assigns = assign(assigns, :workspace_projects, workspace_projects)
+    |> assign(:tag_filter, tag_filter)
+    |> assign(:project_filter, project_filter)
+    
     ~H"""
     <form phx-submit="create_todo">
       <div class="space-y-6">
@@ -600,13 +898,59 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+          <%= if @tag_filter do %>
+            <p class="text-xs text-blue-600 mb-1">DEBUG: Tag filter active: <%= @tag_filter %></p>
+          <% end %>
           <input
             type="text"
             name="todo[tags_input]"
+            value={@tag_filter || ""}
             placeholder="Enter tags separated by commas (e.g., work, urgent, project1)"
             class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p class="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Projects</label>
+          <%= if @project_filter do %>
+            <p class="text-xs text-green-600 mb-1">DEBUG: Project filter active: <%= @project_filter %></p>
+          <% end %>
+          
+          <%= if length(@workspace_projects) > 0 do %>
+            <div class="mb-3 p-3 bg-gray-50 rounded-lg">
+              <p class="text-xs text-gray-600 mb-2">Select existing projects:</p>
+              <div class="flex flex-wrap gap-2">
+                <%= for project <- @workspace_projects do %>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name={"todo[existing_projects][]"}
+                      value={project.name}
+                      checked={@project_filter == project.name}
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span class="text-sm flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full" style={"background-color: #{project.color}"}></span>
+                      <%= if project.favicon_url do %>
+                    <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
+                  <% end %>
+                  <%= project.name %>
+                    </span>
+                  </label>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+          
+          <input
+            type="text"
+            name="todo[new_projects]"
+            value={if @project_filter && !Enum.any?(@workspace_projects, & &1.name == @project_filter), do: @project_filter, else: ""}
+            placeholder="Add new projects (comma-separated)"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p class="text-xs text-gray-500 mt-1">Create new projects by typing their names</p>
         </div>
 
         <div class="flex gap-4">
@@ -666,6 +1010,11 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   defp priority_class("low"), do: "bg-green-100 text-green-800"
   defp priority_class(_), do: "bg-gray-100 text-gray-800"
 
+  defp priority_dot_color("high"), do: "bg-red-400"
+  defp priority_dot_color("medium"), do: "bg-yellow-400"
+  defp priority_dot_color("low"), do: "bg-green-400"
+  defp priority_dot_color(_), do: "bg-yellow-400"
+
   defp format_due_datetime(date, nil, timezone) do
     if timezone do
       # Convert the date to a datetime at midnight UTC, then to user timezone
@@ -710,9 +1059,16 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               <%= @todo.title %>
             </h2>
             <div class="flex items-center gap-3 mt-2">
-              <span class={"px-3 py-1 rounded-full text-sm font-medium #{priority_class(@todo.priority)}"}>
-                <%= String.capitalize(@todo.priority || "medium") %>
-              </span>
+              <button
+                phx-click="cycle_todo_priority"
+                phx-value-id={@todo.id}
+                class="hover:opacity-80 transition-opacity"
+                title="Click to change priority"
+              >
+                <span class={"px-3 py-1 rounded-full text-sm font-medium #{priority_class(@todo.priority)}"}>
+                  <%= String.capitalize(@todo.priority || "medium") %>
+                </span>
+              </button>
               <%= if @todo.due_date do %>
                 <span class="text-gray-600 flex items-center gap-1">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -839,6 +1195,26 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 title={"Filter by ##{tag}"}
               >
                 #<%= tag %>
+              </button>
+            <% end %>
+          </div>
+        <% end %>
+
+        <!-- Projects -->
+        <%= if @todo.projects && length(@todo.projects) > 0 do %>
+          <div class="flex flex-wrap gap-2 mb-6">
+            <%= for project <- @todo.projects do %>
+              <button
+                phx-click="filter_by_project"
+                phx-value-project={project.name}
+                class="px-3 py-1 rounded-full text-sm hover:opacity-80 transition-opacity cursor-pointer"
+                style={"background-color: #{project.color}20; color: #{project.color}; border: 1px solid #{project.color}40;"}
+                title={"Filter by project: #{project.name}"}
+              >
+                <%= if project.favicon_url do %>
+                  <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
+                <% end %>
+                <%= project.name %>
               </button>
             <% end %>
           </div>

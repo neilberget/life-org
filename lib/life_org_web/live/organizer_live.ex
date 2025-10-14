@@ -75,6 +75,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:show_ai_sidebar, false)
      |> assign(:ai_sidebar_view, :conversations)
      |> assign(:tag_filter, nil)
+     |> assign(:project_filter, nil)
      |> assign(:viewing_todo, viewing_todo)
      |> assign(:todo_comments, todo_comments)
      |> assign(:show_comment_form, false)
@@ -97,9 +98,12 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:search_query, "")
      |> assign(:search_results, [])
      |> assign(:show_search_results, false)
+     |> assign(:compact_todo_view, true)
      |> assign(:searching, false)
      |> assign(:show_completed, false)
      |> assign(:user_timezone, current_user.timezone || "America/Chicago")
+     |> assign(:show_mobile_menu, false)
+     |> assign(:mobile_tab, "journal")
      |> then(fn socket ->
        # Show todo modal if viewing a specific todo
        if viewing_todo do
@@ -177,6 +181,7 @@ defmodule LifeOrgWeb.OrganizerLive do
        |> assign(:current_conversation, nil)
        |> assign(:chat_messages, [])
        |> assign(:tag_filter, nil)
+       |> assign(:project_filter, nil)
        |> assign(:viewing_todo, nil)
        |> assign(:todo_comments, [])
        |> assign(:deleting_todo_id, nil)}
@@ -205,6 +210,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:chat_messages, [])
      |> push_event("workspace_changed", %{workspace_id: workspace.id})
      |> assign(:tag_filter, nil)
+     |> assign(:project_filter, nil)
      |> assign(:viewing_todo, nil)
      |> assign(:todo_comments, [])
      |> assign(:deleting_todo_id, nil)}
@@ -398,9 +404,15 @@ defmodule LifeOrgWeb.OrganizerLive do
 
   @impl true
   def handle_event("add_todo", _params, socket) do
+    defaults = %{
+      tag_filter: socket.assigns.tag_filter,
+      project_filter: socket.assigns.project_filter
+    }
+    
     {:noreply,
      socket
      |> assign(:adding_todo, true)
+     |> assign(:todo_form_defaults, defaults)
      |> push_event("show_modal", %{id: "add-todo-modal"})}
   end
 
@@ -419,6 +431,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         if String.trim(time || "") == "", do: nil, else: time
       end)
       |> process_tags_input()
+      |> process_projects_input()
 
     case WorkspaceService.create_todo(cleaned_params, socket.assigns.current_workspace.id) do
       {:ok, todo} ->
@@ -463,6 +476,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         if String.trim(time || "") == "", do: nil, else: time
       end)
       |> process_tags_input()
+      |> process_projects_input()
 
     case WorkspaceService.update_todo(todo, cleaned_params) do
       {:ok, updated_todo} ->
@@ -568,6 +582,55 @@ defmodule LifeOrgWeb.OrganizerLive do
 
     todos = update_todo_in_list(socket.assigns.todos, updated_todo)
     {:noreply, assign(socket, :todos, todos)}
+  end
+
+  @impl true
+  def handle_event("cycle_todo_priority", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, id)
+
+    # Cycle through priorities: low -> medium -> high -> low
+    new_priority = case todo.priority do
+      "low" -> "medium"
+      "medium" -> "high"
+      "high" -> "low"
+      _ -> "medium"  # Default if nil or unknown
+    end
+
+    {:ok, updated_todo} = WorkspaceService.update_todo(todo, %{priority: new_priority})
+
+    todos = update_todo_in_list(socket.assigns.todos, updated_todo)
+
+    # If we're viewing this todo in a modal, update it too
+    socket = socket |> assign(:todos, todos)
+
+    socket = if socket.assigns[:viewing_todo] && socket.assigns.viewing_todo.id == updated_todo.id do
+      socket
+      |> assign(:viewing_todo, updated_todo)
+      |> push_event("show_modal", %{id: "view-todo-modal"})
+    else
+      socket
+    end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("reorder_todos", %{"todo_ids" => todo_ids}, socket) do
+    # Convert string IDs to integers
+    todo_id_order = Enum.map(todo_ids, &String.to_integer/1)
+    
+    # Update the positions in the database
+    case WorkspaceService.reorder_todos(socket.assigns.current_workspace.id, todo_id_order) do
+      {:ok, _} ->
+        # Reload todos to get updated positions
+        todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+        {:noreply, assign(socket, :todos, todos)}
+      
+      {:error, _reason} ->
+        # If reorder fails, just reload original order
+        todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+        {:noreply, assign(socket, :todos, todos)}
+    end
   end
 
   @impl true
@@ -861,8 +924,143 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_event("filter_by_project", %{"project" => project}, socket) do
+    filter = if project == "", do: nil, else: project
+
+    {:noreply,
+     socket
+     |> assign(:project_filter, filter)
+     |> assign(:viewing_todo, nil)
+     |> assign(:editing_todo, nil)
+     |> assign(:adding_todo, false)
+     |> assign(:deleting_todo_id, nil)}
+  end
+
+  @impl true
+  def handle_event("clear_project_filter", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:project_filter, nil)
+     |> assign(:deleting_todo_id, nil)}
+  end
+
+  @impl true
+  def handle_event("open_project_manager", _params, socket) do
+    workspace_projects = LifeOrg.Projects.list_projects(socket.assigns.current_workspace.id)
+    
+    {:noreply, 
+      socket
+      |> assign(:showing_project_manager, true)
+      |> assign(:workspace_projects, workspace_projects)
+      |> push_event("show_modal", %{id: "project-manager-modal"})
+    }
+  end
+
+  @impl true
+  def handle_event("close_project_manager", _params, socket) do
+    {:noreply, 
+      socket
+      |> assign(:showing_project_manager, false)
+      |> push_event("hide_modal", %{id: "project-manager-modal"})
+    }
+  end
+
+  @impl true
+  def handle_event("create_project", params, socket) do
+    attrs = Map.merge(params, %{"workspace_id" => socket.assigns.current_workspace.id})
+    
+    case LifeOrg.Projects.create_project(attrs) do
+      {:ok, _project} ->
+        workspace_projects = LifeOrg.Projects.list_projects(socket.assigns.current_workspace.id)
+        
+        {:noreply, 
+          socket
+          |> assign(:workspace_projects, workspace_projects)
+          |> put_flash(:info, "Project created successfully")
+        }
+      
+      {:error, changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to create project: #{inspect(changeset.errors)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("edit_project", %{"id" => id}, socket) do
+    project = LifeOrg.Projects.get_project!(id)
+    {:noreply, 
+      socket
+      |> assign(:editing_project, project)
+      |> push_event("show_modal", %{id: "edit-project-modal"})
+    }
+  end
+
+  @impl true
+  def handle_event("update_project", params, socket) do
+    project = LifeOrg.Projects.get_project!(params["project_id"])
+    
+    case LifeOrg.Projects.update_project(project, params) do
+      {:ok, _project} ->
+        workspace_projects = LifeOrg.Projects.list_projects(socket.assigns.current_workspace.id)
+        
+        {:noreply, 
+          socket
+          |> assign(:editing_project, nil)
+          |> assign(:workspace_projects, workspace_projects)
+          |> put_flash(:info, "Project updated successfully")
+          |> push_event("hide_modal", %{id: "edit-project-modal"})
+        }
+      
+      {:error, changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to update project: #{inspect(changeset.errors)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_edit_project", _params, socket) do
+    {:noreply, 
+      socket
+      |> assign(:editing_project, nil)
+      |> push_event("hide_modal", %{id: "edit-project-modal"})
+    }
+  end
+
+  @impl true
+  def handle_event("delete_project", %{"id" => id}, socket) do
+    project = LifeOrg.Projects.get_project!(id)
+    
+    case LifeOrg.Projects.delete_project(project) do
+      {:ok, _project} ->
+        workspace_projects = LifeOrg.Projects.list_projects(socket.assigns.current_workspace.id)
+        
+        {:noreply, 
+          socket
+          |> assign(:workspace_projects, workspace_projects)
+          |> put_flash(:info, "Project deleted successfully")
+        }
+      
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to delete project")}
+    end
+  end
+
+  @impl true
   def handle_event("toggle_show_completed", _params, socket) do
     {:noreply, assign(socket, :show_completed, !socket.assigns.show_completed)}
+  end
+
+  @impl true
+  def handle_event("toggle_compact_todo_view", _params, socket) do
+    {:noreply, assign(socket, :compact_todo_view, !socket.assigns.compact_todo_view)}
+  end
+
+  @impl true
+  def handle_event("toggle_mobile_menu", _params, socket) do
+    {:noreply, assign(socket, :show_mobile_menu, !socket.assigns.show_mobile_menu)}
+  end
+
+  @impl true
+  def handle_event("switch_mobile_tab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, :mobile_tab, tab)}
   end
 
   @impl true
@@ -909,6 +1107,13 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:editing_todo, todo)
      |> push_event("hide_modal", %{id: "view-todo-modal"})
      |> push_event("show_modal", %{id: "edit-todo-modal"})}
+  end
+
+  @impl true
+  def handle_event("select_todo_row", %{"id" => id}, socket) do
+    # This is for keyboard navigation selection, no modal opening
+    # The client-side JavaScript will handle preventing this when clicking checkboxes
+    {:noreply, push_event(socket, "todo_row_selected", %{todo_id: id})}
   end
 
   @impl true
@@ -1025,7 +1230,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     # Ensure viewing_todo is set - if not, reload it
     socket =
       if socket.assigns[:viewing_todo] == nil do
-        todo = Repo.get!(Todo, todo_id_int) |> Repo.preload(:journal_entry)
+        todo = Repo.get!(Todo, todo_id_int) |> Repo.preload([:journal_entry, :projects])
 
         comments =
           Repo.all(
@@ -1143,7 +1348,7 @@ defmodule LifeOrgWeb.OrganizerLive do
         socket
       ) do
     todo_id_int = String.to_integer(todo_id)
-    todo = Repo.get!(Todo, todo_id_int) |> Repo.preload(:journal_entry)
+    todo = Repo.get!(Todo, todo_id_int) |> Repo.preload([:journal_entry, :projects])
     workspace_id = socket.assigns.current_workspace.id
 
     # Get or create conversation for this todo
@@ -1819,8 +2024,8 @@ defmodule LifeOrgWeb.OrganizerLive do
           {date, time} -> NaiveDateTime.new!(date, time)
         end
 
-      # Sort by: completed status, then current status (current first), then priority, then due date, then insertion date
-      {todo.completed, !todo.current, priority_order, due_datetime, todo.inserted_at}
+      # Sort by: completed status, then current status (current first), then position, then priority, then due date, then insertion date
+      {todo.completed, !todo.current, todo.position || 999999, priority_order, due_datetime, todo.inserted_at}
     end)
   end
 
@@ -1847,11 +2052,46 @@ defmodule LifeOrgWeb.OrganizerLive do
     end
   end
 
+  defp process_projects_input(params) do
+    # Combine existing_projects checkboxes and new_projects text input
+    existing = Map.get(params, "existing_projects", [])
+    new_text = Map.get(params, "new_projects", "")
+    
+    new_projects = if String.trim(new_text) == "" do
+      []
+    else
+      new_text
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+    end
+    
+    # Combine and deduplicate
+    all_projects = (existing ++ new_projects)
+    |> Enum.uniq()
+    |> Enum.reject(&(&1 == ""))
+    
+    params
+    |> Map.put("projects", all_projects)
+    |> Map.delete("existing_projects")
+    |> Map.delete("new_projects")
+  end
+
   defp filter_todos_by_tag(todos, nil), do: todos
 
   defp filter_todos_by_tag(todos, tag) do
     Enum.filter(todos, fn todo ->
       todo.tags && Enum.member?(todo.tags, tag)
+    end)
+  end
+
+  defp filter_todos_by_project(todos, nil), do: todos
+
+  defp filter_todos_by_project(todos, project_name) do
+    Enum.filter(todos, fn todo ->
+      todo.projects && Enum.any?(todo.projects, fn project ->
+        project.name == project_name
+      end)
     end)
   end
 
@@ -1861,7 +2101,6 @@ defmodule LifeOrgWeb.OrganizerLive do
     |> Enum.uniq()
     |> Enum.sort()
   end
-
 
   # Simple UI update function for todo tool actions  
   defp execute_todo_tool_actions_for_ui(socket, _tool_actions, _todo_id) do
