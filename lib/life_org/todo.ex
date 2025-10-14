@@ -4,6 +4,7 @@ defmodule LifeOrg.Todo do
   alias LifeOrg.Workspace
   alias LifeOrg.TodoComment
   alias LifeOrg.JournalEntry
+  alias LifeOrg.Projects.Project
 
   schema "todos" do
     field :priority, :string
@@ -18,10 +19,14 @@ defmodule LifeOrg.Todo do
     field :comment_count, :integer, virtual: true, default: 0
     field :embedding, {:array, :float}
     field :embedding_generated_at, :utc_datetime
+    field :position, :integer, default: 0
 
     belongs_to :workspace, Workspace
     belongs_to :journal_entry, JournalEntry
     has_many :comments, TodoComment, foreign_key: :todo_id
+    many_to_many :projects, Project,
+      join_through: "todo_projects",
+      on_replace: :delete
 
     timestamps(type: :utc_datetime)
   end
@@ -29,7 +34,7 @@ defmodule LifeOrg.Todo do
   @doc false
   def changeset(todo, attrs) do
     todo
-    |> cast(attrs, [:title, :description, :completed, :priority, :due_date, :due_time, :ai_generated, :current, :workspace_id, :journal_entry_id, :tags])
+    |> cast(attrs, [:title, :description, :completed, :priority, :due_date, :due_time, :ai_generated, :current, :workspace_id, :journal_entry_id, :tags, :position])
     |> validate_required([:title, :workspace_id])
     |> validate_inclusion(:priority, ["high", "medium", "low"])
     |> foreign_key_constraint(:workspace_id)

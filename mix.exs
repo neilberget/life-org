@@ -68,7 +68,6 @@ defmodule LifeOrg.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:earmark, "~> 1.4"},
-      {:hermes_mcp, "~> 0.9"},
       {:cors_plug, "~> 3.0"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_github, "~> 0.8"},
@@ -78,7 +77,8 @@ defmodule LifeOrg.MixProject do
       {:tidewave, "~> 0.2", only: :dev},
       {:openai_ex, "~> 0.8"},
       {:tzdata, "~> 1.1"},
-      {:timex, "~> 3.7"}
+      {:timex, "~> 3.7"},
+      {:floki, "~> 0.36"}
     ]
   end
 

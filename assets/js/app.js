@@ -282,6 +282,284 @@ Hooks.InteractiveCheckboxes = {
   }
 };
 
+// Combined Todo drag and drop + keyboard navigation hook
+Hooks.TodoDragDropKeyboard = {
+  mounted() {
+    // Initialize keyboard navigation
+    this.selectedIndex = -1;
+    this.todos = [];
+    this.updateTodoList();
+
+    // Handle row clicks for selection
+    this.handleRowClick = (event) => {
+      // Check if the click is on an interactive element
+      const target = event.target;
+      const isInteractive = 
+        target.tagName === 'INPUT' ||
+        target.tagName === 'BUTTON' ||
+        target.tagName === 'A' ||
+        target.closest('button') ||
+        target.closest('a') ||
+        target.closest('.todo-checkbox') ||
+        target.classList.contains('cursor-pointer') ||
+        target.closest('[phx-click]');
+      
+      // If clicking on whitespace/non-interactive area, select the row
+      if (!isInteractive) {
+        const todoItem = target.closest('[data-todo-item]');
+        if (todoItem) {
+          const todoId = todoItem.dataset.todoId;
+          if (todoId) {
+            this.pushEvent("select_todo_row", { id: todoId });
+          }
+        }
+      }
+    };
+
+    // Add click listener to the container
+    this.el.addEventListener('click', this.handleRowClick);
+
+    this.handleKeyPress = (event) => {
+      // Only handle keys when not in an input field or modal
+      if (event.target.tagName.toLowerCase() === 'input' ||
+          event.target.tagName.toLowerCase() === 'textarea' ||
+          event.target.contentEditable === 'true' ||
+          document.querySelector('.modal:not([style*="display: none"])') !== null) {
+        return;
+      }
+
+      switch (event.key) {
+        case 'j':
+          event.preventDefault();
+          this.moveSelection(1);
+          break;
+        case 'k':
+          event.preventDefault();
+          this.moveSelection(-1);
+          break;
+        case 'Enter':
+          event.preventDefault();
+          this.viewSelectedTodo();
+          break;
+        case 'e':
+          event.preventDefault();
+          this.editSelectedTodo();
+          break;
+        case 'Escape':
+          event.preventDefault();
+          this.clearSelection();
+          break;
+      }
+    };
+
+    // Handle row selection from server
+    this.handleEvent("todo_row_selected", ({ todo_id }) => {
+      this.selectTodo(todo_id);
+    });
+
+    document.addEventListener("keydown", this.handleKeyPress);
+
+    // Initialize drag and drop
+    this.setupDragDrop();
+  },
+
+  updated() {
+    this.updateTodoList();
+    this.setupDragDrop();
+  },
+
+  setupDragDrop() {
+    const todoItems = this.el.querySelectorAll('[data-todo-item]');
+    
+    todoItems.forEach((item, index) => {
+      // Skip if already set up
+      if (item.hasAttribute('data-drag-setup')) return;
+      
+      item.draggable = true;
+      item.setAttribute('data-drag-setup', 'true');
+      item.style.cursor = 'move';
+      
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', item.dataset.todoId);
+        e.dataTransfer.effectAllowed = 'move';
+        item.style.opacity = '0.5';
+        this.draggedElement = item;
+      });
+      
+      item.addEventListener('dragend', (e) => {
+        item.style.opacity = '1';
+        this.draggedElement = null;
+        // Clean up drag styles
+        this.el.querySelectorAll('[data-todo-item]').forEach(el => {
+          el.classList.remove('drag-over');
+        });
+      });
+      
+      item.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        
+        if (this.draggedElement && this.draggedElement !== item) {
+          item.classList.add('drag-over');
+        }
+      });
+      
+      item.addEventListener('dragleave', (e) => {
+        // Only remove if not dragging into a child element
+        if (!item.contains(e.relatedTarget)) {
+          item.classList.remove('drag-over');
+        }
+      });
+      
+      item.addEventListener('drop', (e) => {
+        e.preventDefault();
+        
+        const draggedId = e.dataTransfer.getData('text/plain');
+        const targetId = item.dataset.todoId;
+        
+        if (draggedId !== targetId) {
+          // Get all visible todo IDs in their current order
+          const allTodos = Array.from(this.el.querySelectorAll('[data-todo-item]'));
+          const draggedElement = allTodos.find(el => el.dataset.todoId === draggedId);
+          const targetElement = item;
+          
+          if (draggedElement && targetElement) {
+            // Determine if we should insert before or after the target
+            const rect = targetElement.getBoundingClientRect();
+            const midY = rect.top + (rect.height / 2);
+            const insertAfter = e.clientY > midY;
+            
+            // Create new order array based on visible todos
+            const newOrder = [];
+            
+            allTodos.forEach(todo => {
+              const todoId = todo.dataset.todoId;
+              
+              if (todoId === targetId) {
+                if (insertAfter) {
+                  newOrder.push(todoId);
+                  if (todoId !== draggedId) {
+                    newOrder.push(draggedId);
+                  }
+                } else {
+                  if (todoId !== draggedId) {
+                    newOrder.push(draggedId);
+                  }
+                  newOrder.push(todoId);
+                }
+              } else if (todoId !== draggedId) {
+                newOrder.push(todoId);
+              }
+            });
+            
+            // If target was dragged, we already added it in the right place above
+            if (draggedId === targetId) {
+              newOrder.push(draggedId);
+            }
+            
+            // Send the new order to the server
+            this.pushEvent('reorder_todos', { todo_ids: newOrder });
+          }
+        }
+        
+        item.classList.remove('drag-over');
+      });
+    });
+  },
+
+  beforeDestroy() {
+    if (this.handleKeyPress) {
+      document.removeEventListener("keydown", this.handleKeyPress);
+    }
+    if (this.handleRowClick) {
+      this.el.removeEventListener('click', this.handleRowClick);
+    }
+  },
+
+  // Keyboard navigation methods
+  updateTodoList() {
+    // Get visible todos (not filtered out)
+    const todoElements = this.el.querySelectorAll('[data-todo-item]:not(.hidden)');
+    this.todos = Array.from(todoElements);
+    
+    // Maintain selection if possible
+    if (this.selectedIndex >= this.todos.length) {
+      this.selectedIndex = this.todos.length - 1;
+    }
+    
+    this.updateSelection();
+  },
+
+  moveSelection(direction) {
+    if (this.todos.length === 0) return;
+
+    if (this.selectedIndex === -1) {
+      // No current selection, select first or last based on direction
+      this.selectedIndex = direction > 0 ? 0 : this.todos.length - 1;
+    } else {
+      // Move selection
+      this.selectedIndex = Math.max(0, Math.min(this.todos.length - 1, this.selectedIndex + direction));
+    }
+    
+    this.updateSelection();
+    this.scrollToSelected();
+  },
+
+  updateSelection() {
+    // Clear all existing selections
+    this.todos.forEach((todo, index) => {
+      if (index === this.selectedIndex) {
+        todo.classList.add('todo-selected');
+      } else {
+        todo.classList.remove('todo-selected');
+      }
+    });
+  },
+
+  scrollToSelected() {
+    if (this.selectedIndex >= 0 && this.todos[this.selectedIndex]) {
+      this.todos[this.selectedIndex].scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      });
+    }
+  },
+
+  clearSelection() {
+    this.selectedIndex = -1;
+    this.updateSelection();
+  },
+
+  viewSelectedTodo() {
+    if (this.selectedIndex >= 0 && this.todos[this.selectedIndex]) {
+      const todo = this.todos[this.selectedIndex];
+      const todoId = todo.dataset.todoId;
+      if (todoId) {
+        this.pushEvent("view_todo", { id: todoId });
+      }
+    }
+  },
+
+  editSelectedTodo() {
+    if (this.selectedIndex >= 0 && this.todos[this.selectedIndex]) {
+      const todo = this.todos[this.selectedIndex];
+      const todoId = todo.dataset.todoId;
+      if (todoId) {
+        this.pushEvent("edit_todo", { id: todoId });
+      }
+    }
+  },
+
+  selectTodo(todoId) {
+    const index = this.todos.findIndex(todo => todo.dataset.todoId === todoId);
+    if (index >= 0) {
+      this.selectedIndex = index;
+      this.updateSelection();
+    }
+  }
+};
+
 // Link preview loader hook
 Hooks.LinkPreviewLoader = {
   mounted() {

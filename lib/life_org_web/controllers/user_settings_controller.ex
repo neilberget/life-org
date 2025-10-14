@@ -2,6 +2,7 @@ defmodule LifeOrgWeb.UserSettingsController do
   use LifeOrgWeb, :controller
 
   alias LifeOrg.Accounts
+  alias LifeOrg.ApiTokens
   alias LifeOrgWeb.UserAuth
 
   plug :assign_email_and_password_changesets
@@ -79,6 +80,39 @@ defmodule LifeOrgWeb.UserSettingsController do
     end
   end
 
+  def create_api_token(conn, %{"api_token" => %{"name" => name}}) do
+    user = conn.assigns.current_user
+
+    case ApiTokens.create_token(user, %{"name" => name}) do
+      {:ok, _api_token, token} ->
+        conn
+        |> put_flash(:info, "API token created successfully. Copy it now - you won't see it again!")
+        |> put_flash(:token, token)
+        |> redirect(to: ~p"/users/settings")
+
+      {:error, _changeset} ->
+        conn
+        |> put_flash(:error, "Failed to create API token.")
+        |> redirect(to: ~p"/users/settings")
+    end
+  end
+
+  def delete_api_token(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+
+    case ApiTokens.delete_token(id, user.id) do
+      {:ok, _} ->
+        conn
+        |> put_flash(:info, "API token deleted successfully.")
+        |> redirect(to: ~p"/users/settings")
+
+      {:error, _} ->
+        conn
+        |> put_flash(:error, "Failed to delete API token.")
+        |> redirect(to: ~p"/users/settings")
+    end
+  end
+
   defp assign_email_and_password_changesets(conn, _opts) do
     user = conn.assigns.current_user
 
@@ -87,5 +121,6 @@ defmodule LifeOrgWeb.UserSettingsController do
     |> assign(:password_changeset, Accounts.change_user_password(user))
     |> assign(:timezone_changeset, Accounts.change_user_timezone(user))
     |> assign(:timezones, LifeOrg.TimezoneHelper.us_timezones())
+    |> assign(:api_tokens, ApiTokens.list_tokens_for_user(user.id))
   end
 end

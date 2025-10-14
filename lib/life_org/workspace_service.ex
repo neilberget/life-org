@@ -1,6 +1,6 @@
 defmodule LifeOrg.WorkspaceService do
   import Ecto.Query, warn: false
-  alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Conversation}
+  alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Conversation, Projects}
 
   def list_workspaces(user_id) do
     Workspace
@@ -103,6 +103,16 @@ defmodule LifeOrg.WorkspaceService do
     |> Repo.all()
   end
 
+  def get_journal_entry(id, user_id) do
+    from(j in JournalEntry,
+      join: w in Workspace,
+      on: j.workspace_id == w.id,
+      where: j.id == ^id and w.user_id == ^user_id,
+      select: j
+    )
+    |> Repo.one()
+  end
+
   def create_journal_entry(attrs, workspace_id) do
     attrs = Map.put(attrs, "workspace_id", workspace_id)
     
@@ -125,7 +135,18 @@ defmodule LifeOrg.WorkspaceService do
   def get_todo(id) do
     Todo
     |> Repo.get!(id)
-    |> Repo.preload(:journal_entry)
+    |> Repo.preload([:journal_entry, :projects])
+  end
+
+  def get_todo(id, user_id) do
+    from(t in Todo,
+      join: w in Workspace,
+      on: t.workspace_id == w.id,
+      where: t.id == ^id and w.user_id == ^user_id,
+      preload: [:journal_entry, :projects],
+      select: t
+    )
+    |> Repo.one()
   end
 
   def list_todos(workspace_id) do
@@ -134,9 +155,9 @@ defmodule LifeOrg.WorkspaceService do
     |> join(:left, [t], c in assoc(t, :comments))
     |> group_by([t], t.id)
     |> select([t, c], %{t | comment_count: count(c.id)})
-    |> order_by([t], [desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
+    |> order_by([t], [desc: t.current, asc: t.position, desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
     |> Repo.all()
-    |> Repo.preload(:journal_entry)
+    |> Repo.preload([:journal_entry, :projects])
   end
 
   def list_journal_todos(journal_entry_id) do
@@ -147,23 +168,42 @@ defmodule LifeOrg.WorkspaceService do
     |> select([t, c], %{t | comment_count: count(c.id)})
     |> order_by([t], [desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
     |> Repo.all()
-    |> Repo.preload(:journal_entry)
+    |> Repo.preload([:journal_entry, :projects])
   end
 
   def create_todo(attrs, workspace_id) do
     attrs = Map.put(attrs, "workspace_id", workspace_id)
+    attrs = maybe_set_position(attrs, workspace_id)
+    project_names = Map.get(attrs, "projects", [])
     
-    %Todo{}
-    |> Todo.changeset(attrs)
+    result = %Todo{}
+    |> Todo.changeset(Map.drop(attrs, ["projects"]))
     |> Repo.insert()
+    
+    case result do
+      {:ok, todo} ->
+        todo = associate_todo_with_projects(todo, project_names, workspace_id)
+        {:ok, Repo.preload(todo, [:journal_entry, :projects])}
+      error ->
+        error
+    end
   end
 
   def update_todo(%Todo{} = todo, attrs) do
+    project_names = Map.get(attrs, "projects", nil)
+    
     case todo
-         |> Todo.changeset(attrs)
+         |> Todo.changeset(Map.drop(attrs, ["projects"]))
          |> Repo.update() do
-      {:ok, updated_todo} -> {:ok, Repo.preload(updated_todo, :journal_entry)}
-      error -> error
+      {:ok, updated_todo} ->
+        updated_todo = if project_names != nil do
+          associate_todo_with_projects(updated_todo, project_names, updated_todo.workspace_id)
+        else
+          updated_todo
+        end
+        {:ok, Repo.preload(updated_todo, [:journal_entry, :projects], force: true)}
+      error -> 
+        error
     end
   end
 
@@ -209,5 +249,70 @@ defmodule LifeOrg.WorkspaceService do
       _ ->
         changeset
     end
+  end
+
+  defp associate_todo_with_projects(todo, project_names, workspace_id) when is_list(project_names) do
+    # Filter out empty strings and nil values
+    project_names = project_names
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    
+    if Enum.empty?(project_names) do
+      # Clear all project associations
+      todo
+      |> Repo.preload(:projects)
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:projects, [])
+      |> Repo.update!()
+    else
+      # Get or create projects
+      projects = Projects.get_or_create_projects(workspace_id, project_names)
+      
+      # Associate projects with todo
+      todo
+      |> Repo.preload(:projects)
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:projects, projects)
+      |> Repo.update!()
+    end
+  end
+  
+  defp associate_todo_with_projects(todo, project_names, workspace_id) when is_binary(project_names) do
+    # Convert comma-separated string to list
+    project_list = project_names
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    
+    associate_todo_with_projects(todo, project_list, workspace_id)
+  end
+  
+  defp associate_todo_with_projects(todo, _, _), do: todo
+
+  defp maybe_set_position(attrs, workspace_id) do
+    case Map.get(attrs, "position") do
+      nil ->
+        max_position = from(t in Todo, 
+          where: t.workspace_id == ^workspace_id, 
+          select: max(t.position))
+        |> Repo.one()
+        
+        position = (max_position || 0) + 1000
+        Map.put(attrs, "position", position)
+      _ ->
+        attrs
+    end
+  end
+
+  def reorder_todos(workspace_id, todo_id_order) do
+    Repo.transaction(fn ->
+      todo_id_order
+      |> Enum.with_index()
+      |> Enum.each(fn {todo_id, index} ->
+        position = index * 1000
+        from(t in Todo, where: t.id == ^todo_id and t.workspace_id == ^workspace_id)
+        |> Repo.update_all(set: [position: position])
+      end)
+    end)
   end
 end

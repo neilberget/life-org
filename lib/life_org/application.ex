@@ -14,8 +14,6 @@ defmodule LifeOrg.Application do
       {Phoenix.PubSub, name: LifeOrg.PubSub},
       # Start the Finch HTTP client for sending emails
       {Finch, name: LifeOrg.Finch},
-      # Start MCP server registry and task supervisor
-      {Task.Supervisor, name: LifeOrg.MCP.TaskSupervisor},
       # Start integration registry
       LifeOrg.Integrations.Registry,
       # Start link fetcher service
@@ -33,9 +31,7 @@ defmodule LifeOrg.Application do
       # Start a worker by calling: LifeOrg.Worker.start_link(arg)
       # {LifeOrg.Worker, arg},
       # Start to serve requests, typically the last entry
-      LifeOrgWeb.Endpoint,
-      Hermes.Server.Registry,
-      {LifeOrg.MCPServer, transport: :streamable_http}
+      LifeOrgWeb.Endpoint
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

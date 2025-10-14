@@ -1,6 +1,6 @@
 defmodule LifeOrg.AIHandler do
   import Ecto.Query
-  alias LifeOrg.{AnthropicClient, EmbeddingsService, Repo, Todo, WorkspaceService}
+  alias LifeOrg.{AnthropicClient, EmbeddingsService, Repo, Todo, TodoComment, WorkspaceService}
 
   def process_message(message, journal_entries, todos, conversation_history \\ [], workspace_id) do
     system_prompt = build_system_prompt(journal_entries, todos)
@@ -44,6 +44,13 @@ defmodule LifeOrg.AIHandler do
       tags -> "Existing tags: " <> Enum.join(tags, ", ")
     end
     
+    # Get existing projects for context
+    existing_projects = get_unique_projects(existing_todos)
+    projects_context = case existing_projects do
+      [] -> "No existing projects."
+      projects -> "Existing projects: " <> Enum.join(Enum.take(Enum.map(projects, & &1.name), 15), ", ") <> if length(projects) > 15, do: "...", else: ""
+    end
+    
     # Provide basic statistics about existing todos rather than full details
     total_todos = length(existing_todos)
     completed_todos = Enum.count(existing_todos, & &1.completed)
@@ -73,41 +80,40 @@ defmodule LifeOrg.AIHandler do
     end
 
     system_prompt = """
-    You are an intelligent assistant that extracts actionable todos from journal entries with full awareness of the user's workspace history and patterns.
+    You are an assistant that extracts simple, high-level actionable todos from journal entries.
 
     WORKSPACE OVERVIEW:
     - Total todos: #{pending_todos} pending, #{completed_todos} completed
     - #{tags_context}
+    - #{projects_context}
     
     #{important_todos_context}
 
-    ENHANCED TODO EXTRACTION PROCESS:
+    EXTRACTION GUIDELINES:
     
-    1. CONTEXTUAL DISCOVERY: First, use the search_content tool to find relevant past journal entries and todos related to the themes, topics, or projects mentioned in this journal entry. This will help you understand:
-       - Similar past tasks and their patterns
-       - Ongoing projects that this entry might relate to
-       - Historical completion patterns and priorities
-       - Related todos that might need updates
+    1. KEEP TODOS SIMPLE: Create concise, high-level todos that capture the main action without detailed implementation steps.
     
-    2. INTELLIGENT TODO CREATION: Based on your search findings, create todos that:
-       - Avoid duplicating existing similar tasks (use semantic similarity, not just exact matches)
-       - Continue logical progressions from past entries
-       - Use appropriate tags based on historical patterns
-       - Set priorities informed by similar past tasks
-       - Include context from related past entries in descriptions
+    2. FOCUS ON ACTIONABLE ITEMS: Only create todos for clear, actionable tasks mentioned in the journal entry.
     
-    3. TODO RELATIONSHIP BUILDING: When appropriate, use update_todo to enhance existing todos with new context or complete_todo when the journal indicates task completion.
+    3. AVOID OVER-ENGINEERING: Don't break down tasks into detailed sub-steps or create comprehensive implementation plans. Keep descriptions brief and to-the-point.
     
-    4. SMART DEDUPLICATION: Only create new todos for tasks that are genuinely new and don't semantically overlap with existing tasks.
+    4. USE SEARCH SPARINGLY: Only search for context if you need to avoid duplicating an existing todo or understand if something is already completed.
 
     For each todo you create:
-    - Use clear, descriptive titles that build on workspace patterns
-    - Set appropriate priority based on context and historical patterns
-    - Add relevant tags that connect to existing workspace taxonomy
-    - Include rich descriptions with context from related past entries
-    - For complex tasks, use GitHub-style markdown checkboxes (- [ ] unchecked, - [x] checked) for interactive subtasks
+    - Use a clear, concise title (the main action)
+    - Keep descriptions brief and high-level
+    - Set appropriate priority and tags based on the journal content
+    - ASSIGN APPROPRIATE PROJECTS: When the journal mentions specific projects, systems, or work areas, match them to existing projects or create new ones. For example, if the journal mentions "mobile app", "website", "API", "client work", etc., assign appropriate project names.
+    - Use existing projects when possible, but create new project names when the work doesn't fit existing categories
+    - Avoid detailed step-by-step instructions or comprehensive task breakdowns
     
-    IMPORTANT: Start by searching for relevant context before creating any todos. Use multiple search queries with different terms and approaches to build comprehensive context.
+    PROJECT MATCHING EXAMPLES:
+    - Journal mentions "fix the mobile app bug" → assign to "Mobile App" project
+    - Journal mentions "update the website design" → assign to "Website" or "Web App" project  
+    - Journal mentions "client meeting about XYZ" → assign to "XYZ Client" project
+    - Journal mentions "API documentation" → assign to "API Development" project
+    
+    Example: Instead of "Review implementation, design function, add types, test with games, document usage" just create "Add auto-refresh function to heygg-common" and assign to "HeyGG Common" project
     """
     
     # Define tools for journal todo extraction
@@ -164,6 +170,7 @@ defmodule LifeOrg.AIHandler do
           "complete_todo" -> :complete_todo
           "delete_todo" -> :delete_todo
           "get_todo_by_id" -> :get_todo_by_id
+          "add_todo_comment" -> :add_todo_comment
           _ -> :unknown
         end
       } |> Map.merge(convert_tool_params(tool_use)), workspace_id) do
@@ -244,7 +251,8 @@ defmodule LifeOrg.AIHandler do
           title: tool_use.input["title"],
           description: tool_use.input["description"] || "",
           priority: tool_use.input["priority"] || "medium",
-          tags: tool_use.input["tags"] || []
+          tags: tool_use.input["tags"] || [],
+          projects: tool_use.input["projects"] || []
         }
       "update_todo" ->
         updates = %{}
@@ -252,6 +260,7 @@ defmodule LifeOrg.AIHandler do
         |> maybe_add("description", tool_use.input["description"])
         |> maybe_add("priority", tool_use.input["priority"])
         |> maybe_add("tags", tool_use.input["tags"])
+        |> maybe_add("projects", tool_use.input["projects"])
         
         %{id: tool_use.input["id"], updates: updates}
       "complete_todo" ->
@@ -260,6 +269,8 @@ defmodule LifeOrg.AIHandler do
         %{id: tool_use.input["id"]}
       "get_todo_by_id" ->
         %{id_or_url: tool_use.input["id_or_url"]}
+      "add_todo_comment" ->
+        %{id: tool_use.input["id"], content: tool_use.input["content"]}
       _ ->
         %{}
     end
@@ -319,6 +330,13 @@ defmodule LifeOrg.AIHandler do
           {:ok, %Todo{} = todo} -> "Successfully completed todo: #{todo.title} (ID: #{todo.id})"
           {:ok, todo} -> "Completed todo: #{inspect(todo)}"
           {:error, error} -> "Failed to complete todo: #{inspect(error)}"
+          error -> "Unexpected result: #{inspect(error)}"
+        end
+      "add_todo_comment" ->
+        case result do
+          {:ok, message} when is_binary(message) -> message
+          {:ok, _result} -> "Comment added successfully"
+          {:error, error} -> "Failed to add comment: #{inspect(error)}"
           error -> "Unexpected result: #{inspect(error)}"
         end
       _ ->
@@ -409,6 +427,13 @@ defmodule LifeOrg.AIHandler do
       tags -> "Available tags: " <> Enum.join(Enum.take(tags, 15), ", ") <> if length(tags) > 15, do: "...", else: ""
     end
     
+    # Get existing projects for context
+    existing_projects = get_unique_projects(todos)
+    projects_context = case existing_projects do
+      [] -> "No existing projects."
+      projects -> "Available projects: " <> Enum.join(Enum.take(Enum.map(projects, & &1.name), 15), ", ") <> if length(projects) > 15, do: "...", else: ""
+    end
+    
     """
     You are a helpful life organization assistant. You can help users manage their tasks and reflect on their life using available tools.
     
@@ -416,6 +441,7 @@ defmodule LifeOrg.AIHandler do
     - Journal: #{journal_summary}
     - Todos: #{todos_summary}
     - #{tags_context}
+    - #{projects_context}
     
     HIGH PRIORITY & CURRENT ITEMS:
     #{priority_context}
@@ -429,12 +455,18 @@ defmodule LifeOrg.AIHandler do
     - The user asks questions that require up-to-date information beyond your knowledge cutoff
     - The user wants to find past entries or todos related to a specific topic or theme
     
-    When creating todos, please suggest appropriate tags based on:
-    - Existing tags that are relevant to the new task
+    When creating todos, please suggest appropriate tags and projects based on:
+    - Existing tags and projects that are relevant to the new task
     - Common categorizations like "work", "personal", "urgent", "project", "store", "health", etc.
     - Context from the user's message or journal entries
     
-    Use existing tags when possible to maintain consistency, but feel free to suggest new tags when appropriate.
+    PROJECT ASSIGNMENT GUIDELINES:
+    - Always assign todos to appropriate projects when the context suggests specific work areas, systems, or initiatives
+    - Use existing projects when the task clearly fits an existing project category
+    - Create new projects with descriptive names when tasks don't fit existing projects
+    - Examples: "Mobile App", "Website Redesign", "Client X", "API Development", "Marketing Campaign", etc.
+    
+    Use existing tags and projects when possible to maintain consistency, but feel free to suggest new ones when appropriate.
     
     SUBTASK FORMATTING: When creating todo descriptions with subtasks, you can use GitHub-style markdown checkboxes that will become interactive:
     - Use `- [ ]` for unchecked subtasks
@@ -524,6 +556,11 @@ defmodule LifeOrg.AIHandler do
               "type" => "array",
               "items" => %{"type" => "string"},
               "description" => "Tags to categorize the todo. Existing tags: #{Enum.join(existing_tags, ", ")}"
+            },
+            "projects" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "Project names to organize this todo. Will create projects if they don't exist. Use descriptive names like 'Web App', 'Mobile App', 'API Development', etc."
             }
           },
           "required" => ["title"]
@@ -556,6 +593,11 @@ defmodule LifeOrg.AIHandler do
               "type" => "array",
               "items" => %{"type" => "string"},
               "description" => "New tags for the todo"
+            },
+            "projects" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "New project names for the todo. Will create projects if they don't exist."
             }
           },
           "required" => ["id"]
@@ -602,6 +644,24 @@ defmodule LifeOrg.AIHandler do
           },
           "required" => ["id_or_url"]
         }
+      },
+      %{
+        "name" => "add_todo_comment",
+        "description" => "Add a comment to a specific todo item with status updates, notes, or other contextual information",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "id" => %{
+              "type" => "integer",
+              "description" => "The ID of the todo to add a comment to"
+            },
+            "content" => %{
+              "type" => "string",
+              "description" => "The comment content (supports markdown)"
+            }
+          },
+          "required" => ["id", "content"]
+        }
       }
     ]
   end
@@ -626,6 +686,7 @@ defmodule LifeOrg.AIHandler do
           description: tool_use.input["description"] || "",
           priority: tool_use.input["priority"] || "medium",
           tags: tool_use.input["tags"] || [],
+          projects: tool_use.input["projects"] || [],
           journal_entry_id: journal_entry_id
         }
         
@@ -635,6 +696,7 @@ defmodule LifeOrg.AIHandler do
         |> maybe_add("description", tool_use.input["description"])
         |> maybe_add("priority", tool_use.input["priority"])
         |> maybe_add("tags", tool_use.input["tags"])
+        |> maybe_add("projects", tool_use.input["projects"])
         
         %{
           action: :update_todo,
@@ -659,6 +721,13 @@ defmodule LifeOrg.AIHandler do
           action: :get_todo_by_id,
           id_or_url: tool_use.input["id_or_url"]
         }
+        
+      "add_todo_comment" ->
+        %{
+          action: :add_todo_comment,
+          id: tool_use.input["id"],
+          content: tool_use.input["content"]
+        }
     end
   end
   
@@ -672,6 +741,15 @@ defmodule LifeOrg.AIHandler do
     # Convert single tag to list
     Map.put(map, "tags", [to_string(value)])
   end
+  defp maybe_add(map, "projects", value) when is_list(value) do
+    # Ensure all projects are strings
+    projects = Enum.map(value, &to_string/1)
+    Map.put(map, "projects", projects)
+  end
+  defp maybe_add(map, "projects", value) when not is_nil(value) do
+    # Convert single project to list
+    Map.put(map, "projects", [to_string(value)])
+  end
   defp maybe_add(map, key, value) when is_list(value) and value != [], do: Map.put(map, key, value)
   defp maybe_add(map, key, value), do: Map.put(map, key, value)
   
@@ -680,6 +758,13 @@ defmodule LifeOrg.AIHandler do
     |> Enum.flat_map(fn todo -> todo.tags || [] end)
     |> Enum.uniq()
     |> Enum.sort()
+  end
+
+  defp get_unique_projects(todos) do
+    todos
+    |> Enum.flat_map(fn todo -> todo.projects || [] end)
+    |> Enum.uniq_by(& &1.name)
+    |> Enum.sort_by(& &1.name)
   end
 
   defp format_priority_todos(todos) do
@@ -712,11 +797,20 @@ defmodule LifeOrg.AIHandler do
       tags -> [to_string(tags)]
     end
     
+    # Ensure projects is always a list of strings
+    projects = case params[:projects] do
+      nil -> []
+      [] -> []
+      projects when is_list(projects) -> Enum.map(projects, &to_string/1)
+      projects -> [to_string(projects)]
+    end
+    
     todo_attrs = %{
       "title" => params.title,
       "description" => params.description,
       "priority" => params.priority,
       "tags" => tags,
+      "projects" => projects,
       "ai_generated" => true
     }
     
@@ -792,6 +886,30 @@ defmodule LifeOrg.AIHandler do
         get_todo_by_parsed_id(todo_id, workspace_id)
       {:error, reason} -> 
         {:error, reason}
+    end
+  end
+
+  def execute_tool_action(%{action: :add_todo_comment, id: id, content: content}, workspace_id) do
+    case Repo.get(Todo, id) do
+      nil -> 
+        {:error, "Todo not found with ID: #{id}"}
+      todo ->
+        # Verify todo belongs to workspace
+        if todo.workspace_id == workspace_id do
+          case Repo.insert(
+                 TodoComment.changeset(
+                   %TodoComment{},
+                   %{"todo_id" => id, "content" => content}
+                 )
+               ) do
+            {:ok, _comment} -> 
+              {:ok, "Comment added successfully: #{String.slice(content, 0, 100)}#{if String.length(content) > 100, do: "...", else: ""}"}
+            {:error, error} -> 
+              {:error, "Failed to add comment: #{inspect(error)}"}
+          end
+        else
+          {:error, "Todo not found in current workspace"}
+        end
     end
   end
 
@@ -871,6 +989,9 @@ defmodule LifeOrg.AIHandler do
       tags -> "Available tags: " <> Enum.join(Enum.take(tags, 15), ", ") <> if length(tags) > 15, do: "...", else: ""
     end
     
+    # Add detailed project context when todo has associated projects
+    project_context = format_project_context(todo)
+    
     """
     You are a helpful personal assistant focused on helping with a specific todo item. You understand the user's broader life context but specialize in providing targeted advice, suggestions, and task management for the current todo.
 
@@ -882,6 +1003,8 @@ defmodule LifeOrg.AIHandler do
 
     LIFE CONTEXT:
     #{entries_context}
+
+    #{project_context}
 
     #{tags_context}
 
@@ -922,6 +1045,13 @@ defmodule LifeOrg.AIHandler do
       tags -> " | Tags: " <> Enum.join(tags, ", ")
     end
     
+    # Include project information if available
+    projects_info = case todo.projects do
+      nil -> ""
+      [] -> ""
+      projects -> " | Projects: " <> Enum.join(Enum.map(projects, & &1.name), ", ")
+    end
+    
     description = if todo.description && String.trim(todo.description) != "" do
       "\nDescription: #{todo.description}"
     else
@@ -929,8 +1059,39 @@ defmodule LifeOrg.AIHandler do
     end
     
     """
-    ID: #{todo.id} | #{status} | Priority: #{priority} | Title: #{todo.title}#{due_info}#{tags_info}#{description}
+    ID: #{todo.id} | #{status} | Priority: #{priority} | Title: #{todo.title}#{due_info}#{tags_info}#{projects_info}#{description}
     """
+  end
+
+  defp format_project_context(todo) do
+    case todo.projects do
+      nil -> ""
+      [] -> ""
+      projects ->
+        project_details = Enum.map(projects, fn project ->
+          description_part = if project.description && String.trim(project.description) != "" do
+            "\n    Description: #{project.description}"
+          else
+            ""
+          end
+          
+          url_part = if project.url && String.trim(project.url) != "" do
+            "\n    URL: #{project.url}"
+          else
+            ""
+          end
+          
+          "  - #{project.name}#{description_part}#{url_part}"
+        end)
+        
+        """
+PROJECT CONTEXT:
+This todo is associated with the following project(s):
+#{Enum.join(project_details, "\n")}
+
+Use this project information to provide more targeted advice and suggestions that align with the project's goals and context.
+"""
+    end
   end
 
   defp format_todo_comments(comments) do
@@ -1060,6 +1221,11 @@ defmodule LifeOrg.AIHandler do
               "type" => "array",
               "items" => %{"type" => "string"},
               "description" => "Tags to categorize the todo. Available tags: #{Enum.join(existing_tags, ", ")}"
+            },
+            "projects" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "Project names to organize this todo. Will create projects if they don't exist."
             }
           },
           "required" => ["title"]
@@ -1088,6 +1254,11 @@ defmodule LifeOrg.AIHandler do
               "type" => "array",
               "items" => %{"type" => "string"},
               "description" => "New tags for the todo"
+            },
+            "projects" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "New project names for the todo. Will create projects if they don't exist."
             },
             "due_date" => %{
               "type" => "string",
@@ -1149,7 +1320,8 @@ defmodule LifeOrg.AIHandler do
           title: tool_use.input["title"],
           description: tool_use.input["description"] || "",
           priority: tool_use.input["priority"] || "medium",
-          tags: tool_use.input["tags"] || []
+          tags: tool_use.input["tags"] || [],
+          projects: tool_use.input["projects"] || []
         }
         
       "update_current_todo" ->
@@ -1158,8 +1330,8 @@ defmodule LifeOrg.AIHandler do
         |> maybe_add("description", tool_use.input["description"])
         |> maybe_add("priority", tool_use.input["priority"])
         |> maybe_add("tags", tool_use.input["tags"])
+        |> maybe_add("projects", tool_use.input["projects"])
         |> maybe_add("due_date", tool_use.input["due_date"])
-        
         
         %{
           action: :update_todo,
@@ -1721,7 +1893,8 @@ defmodule LifeOrg.AIHandler do
           title: tool_use.input["title"],
           description: tool_use.input["description"] || "",
           priority: tool_use.input["priority"] || "medium",
-          tags: tool_use.input["tags"] || []
+          tags: tool_use.input["tags"] || [],
+          projects: tool_use.input["projects"] || []
         }
         
       "create_related_todo" ->
@@ -1731,6 +1904,7 @@ defmodule LifeOrg.AIHandler do
           description: tool_use.input["description"] || "",
           priority: tool_use.input["priority"] || "medium",
           tags: tool_use.input["tags"] || [],
+          projects: tool_use.input["projects"] || [],
           journal_entry_id: journal_entry.id
         }
         
@@ -1740,6 +1914,7 @@ defmodule LifeOrg.AIHandler do
         |> maybe_add("description", tool_use.input["description"])
         |> maybe_add("priority", tool_use.input["priority"])
         |> maybe_add("tags", tool_use.input["tags"])
+        |> maybe_add("projects", tool_use.input["projects"])
         |> maybe_add("due_date", tool_use.input["due_date"])
         
         %{

@@ -17,6 +17,17 @@ defmodule LifeOrgWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :api_auth do
+    plug :accepts, ["json"]
+    plug LifeOrgWeb.Plugs.ApiAuth
+  end
+
+  scope "/", LifeOrgWeb do
+    pipe_through :api
+
+    get "/health", HealthController, :index
+  end
+
   scope "/", LifeOrgWeb do
     pipe_through [:browser, :require_authenticated_user]
 
@@ -42,14 +53,13 @@ defmodule LifeOrgWeb.Router do
     post "/:provider/callback", AuthController, :callback
   end
 
-  # MCP server endpoint
-  forward "/mcp", Hermes.Server.Transport.StreamableHTTP.Plug,
-    server: LifeOrg.MCPServer
+  scope "/api/v1", LifeOrgWeb.API.V1, as: :api_v1 do
+    pipe_through :api_auth
 
-  # Other scopes may use custom stacks.
-  # scope "/api", LifeOrgWeb do
-  #   pipe_through :api
-  # end
+    resources "/workspaces", WorkspaceController, only: [:index, :show]
+    resources "/journal_entries", JournalEntryController, except: [:new, :edit]
+    resources "/todos", TodoController, except: [:new, :edit]
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:life_org, :dev_routes) do
@@ -87,6 +97,8 @@ defmodule LifeOrgWeb.Router do
     get "/users/settings", UserSettingsController, :edit
     put "/users/settings", UserSettingsController, :update
     get "/users/settings/confirm_email/:token", UserSettingsController, :confirm_email
+    post "/users/settings/api_tokens", UserSettingsController, :create_api_token
+    delete "/users/settings/api_tokens/:id", UserSettingsController, :delete_api_token
   end
 
   scope "/", LifeOrgWeb do

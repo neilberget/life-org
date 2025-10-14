@@ -157,3 +157,33 @@ p:has(input[type="checkbox"].checkbox-readonly) {
   align-items: flex-start;
   margin-bottom: 0.5rem;
 }
+
+/* Drag and drop styles */
+[data-todo-item] {
+  transition: box-shadow 0.2s ease;
+}
+
+[data-todo-item]:hover {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+[data-todo-item].drag-over {
+  border-top: 3px solid #3b82f6 !important;
+  margin-top: -3px;
+}
+
+[data-todo-item][draggable="true"] {
+  user-select: none;
+}
+
+/* Todo keyboard navigation styles */
+[data-todo-item].todo-selected {
+  background-color: #dbeafe !important; /* bg-blue-100 */
+  border-color: #3b82f6 !important; /* border-blue-500 */
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Make the entire todo row clickable for selection */
+[data-todo-item] {
+  cursor: pointer;
+}

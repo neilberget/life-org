@@ -7,8 +7,8 @@ defmodule LifeOrgWeb.Components.JournalComponent do
 
   def journal_column(assigns) do
     ~H"""
-    <div class="w-1/2 bg-white border-r border-gray-200 overflow-y-auto" phx-hook="ClearJournalForm" id="journal-column">
-      <div class="p-6">
+    <div class="w-full md:w-1/2 bg-white md:border-r border-gray-200 overflow-y-auto" phx-hook="ClearJournalForm" id="journal-column">
+      <div class="p-4 md:p-6">
         <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold text-gray-800">Journal Entries</h2>
           <button

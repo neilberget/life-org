@@ -1,6 +1,6 @@
 <.header class="text-center">
   Account Settings
-  <:subtitle>Manage your account email address, password, and timezone settings</:subtitle>
+  <:subtitle>Manage your account email address, password, timezone settings, and API tokens</:subtitle>
 </.header>
 
 <div class="space-y-12 divide-y">
@@ -73,16 +73,74 @@
 
       <input type="hidden" name="action" value="update_timezone" />
 
-      <.input 
-        field={f[:timezone]} 
-        type="select" 
-        label="Timezone" 
+      <.input
+        field={f[:timezone]}
+        type="select"
+        label="Timezone"
         options={@timezones}
-        required 
+        required
       />
       <:actions>
         <.button phx-disable-with="Changing...">Update Timezone</.button>
       </:actions>
     </.simple_form>
+  </div>
+  <div>
+    <h3 class="text-lg font-semibold mb-4">API Tokens</h3>
+    <p class="text-sm text-gray-600 mb-4">
+      Create API tokens to access your data programmatically via the REST API.
+    </p>
+
+    <%= if @conn.assigns[:flash]["token"] do %>
+      <div class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+        <p class="text-sm font-semibold mb-2">Your new API token (copy it now):</p>
+        <code class="block p-2 bg-white border rounded text-xs break-all"><%= @conn.assigns.flash["token"] %></code>
+        <p class="text-xs text-gray-600 mt-2">This token will not be shown again.</p>
+      </div>
+    <% end %>
+
+    <.simple_form
+      :let={f}
+      for={%{}}
+      as={:api_token}
+      action={~p"/users/settings/api_tokens"}
+      id="create_token"
+    >
+      <.input field={f[:name]} type="text" label="Token Name" placeholder="My API Token" required />
+      <:actions>
+        <.button>Create Token</.button>
+      </:actions>
+    </.simple_form>
+
+    <%= if length(@api_tokens) > 0 do %>
+      <div class="mt-6">
+        <h4 class="text-sm font-semibold mb-2">Active Tokens</h4>
+        <div class="space-y-2">
+          <%= for token <- @api_tokens do %>
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded">
+              <div>
+                <p class="font-medium"><%= token.name %></p>
+                <p class="text-xs text-gray-600">
+                  Created <%= Calendar.strftime(token.inserted_at, "%B %d, %Y") %>
+                  <%= if token.last_used_at do %>
+                    • Last used <%= Calendar.strftime(token.last_used_at, "%B %d, %Y") %>
+                  <% else %>
+                    • Never used
+                  <% end %>
+                </p>
+              </div>
+              <.link
+                href={~p"/users/settings/api_tokens/#{token.id}"}
+                method="delete"
+                data-confirm="Are you sure you want to delete this token?"
+                class="text-red-600 hover:text-red-800 text-sm"
+              >
+                Delete
+              </.link>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
   </div>
 </div>

@@ -1,0 +1,54 @@
+services:
+  lifeorg:
+    # Build from your local source code
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Or use a pre-built image:
+    # image: your-registry/lifeorg:latest
+    container_name: lifeorg
+    restart: unless-stopped
+    networks:
+      - homelab
+    environment:
+      # Phoenix Configuration
+      PHX_HOST: lifeorg.kestrel.home
+      PHX_SERVER: "true"
+      PORT: 4000
+
+      # Database Configuration
+      DATABASE_URL: ecto://lifeorg:${LIFEORG_DB_PASSWORD}@mysql:3306/life_org_prod
+
+      # Secret Key Base - Generate with: mix phx.gen.secret
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+
+      # If you're using LiveView
+      # LIVE_VIEW_SIGNING_SALT: ${LIVE_VIEW_SIGNING_SALT}
+
+      # If you have AI features
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+      # Release configuration
+      RELEASE_COOKIE: ${RELEASE_COOKIE}
+    volumes:
+      # Persistent uploads/attachments on NAS
+      - /mnt/synology/projects/life-org/uploads:/app/priv/static/uploads
+      # Optional: logs on NAS for long-term storage
+      - /mnt/synology/projects/life-org/logs:/app/logs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lifeorg.rule=Host(`lifeorg.kestrel.home`)"
+      - "traefik.http.routers.lifeorg.entrypoints=websecure" # Changed from 'web'
+      - "traefik.http.routers.lifeorg.tls=true" # Added
+      - "traefik.http.services.lifeorg.loadbalancer.server.port=4000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  homelab:
+    external: true
