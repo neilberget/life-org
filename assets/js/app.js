@@ -386,6 +386,7 @@ Hooks.TodoDragDropKeyboard = {
       forceFallback: true,
       fallbackClass: 'sortable-fallback',
       fallbackOnBody: true,
+      emptyInsertThreshold: 100,
 
       onEnd: (evt) => {
         // Get all todo IDs in their new order
