@@ -440,7 +440,27 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </div>
         </div>
 
-        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()">
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            phx-click="move_todo_to_top"
+            phx-value-id={@todo.id}
+            class="text-gray-500 hover:text-gray-700"
+            title="Move to top"
+          >
+            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
+            </svg>
+          </button>
+          <button
+            phx-click="move_todo_to_bottom"
+            phx-value-id={@todo.id}
+            class="text-gray-500 hover:text-gray-700"
+            title="Move to bottom"
+          >
+            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+          </button>
           <%= if @todo.current do %>
             <button
               phx-click="stop_todo"
@@ -524,7 +544,27 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             </h4>
             <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
-                onclick={"event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + '/todo/#{@todo.id}').then(() => { 
+                phx-click="move_todo_to_top"
+                phx-value-id={@todo.id}
+                class="text-gray-500 hover:text-gray-700"
+                title="Move to top"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
+                </svg>
+              </button>
+              <button
+                phx-click="move_todo_to_bottom"
+                phx-value-id={@todo.id}
+                class="text-gray-500 hover:text-gray-700"
+                title="Move to bottom"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+              <button
+                onclick={"event.stopPropagation(); navigator.clipboard.writeText(window.location.origin + '/todo/#{@todo.id}').then(() => {
                   const btn = this;
                   const originalIcon = btn.innerHTML;
                   btn.innerHTML = '<svg class=\"h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"></path></svg>';

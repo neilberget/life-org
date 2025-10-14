@@ -618,19 +618,59 @@ defmodule LifeOrgWeb.OrganizerLive do
   def handle_event("reorder_todos", %{"todo_ids" => todo_ids}, socket) do
     # Convert string IDs to integers
     todo_id_order = Enum.map(todo_ids, &String.to_integer/1)
-    
+
     # Update the positions in the database
     case WorkspaceService.reorder_todos(socket.assigns.current_workspace.id, todo_id_order) do
       {:ok, _} ->
         # Reload todos to get updated positions
         todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
         {:noreply, assign(socket, :todos, todos)}
-      
+
       {:error, _reason} ->
         # If reorder fails, just reload original order
         todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
         {:noreply, assign(socket, :todos, todos)}
     end
+  end
+
+  @impl true
+  def handle_event("move_todo_to_top", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, String.to_integer(id))
+
+    # Find minimum position among active (non-completed) todos
+    min_position =
+      socket.assigns.todos
+      |> Enum.reject(&(&1.completed))
+      |> Enum.map(&(&1.position || 0))
+      |> Enum.min(fn -> 0 end)
+
+    # Set position to 1000 less than minimum
+    new_position = min_position - 1000
+
+    {:ok, _updated_todo} = WorkspaceService.update_todo(todo, %{position: new_position})
+
+    todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+    {:noreply, assign(socket, :todos, todos)}
+  end
+
+  @impl true
+  def handle_event("move_todo_to_bottom", %{"id" => id}, socket) do
+    todo = Repo.get!(Todo, String.to_integer(id))
+
+    # Find maximum position among active (non-completed) todos
+    max_position =
+      socket.assigns.todos
+      |> Enum.reject(&(&1.completed))
+      |> Enum.map(&(&1.position || 0))
+      |> Enum.max(fn -> 0 end)
+
+    # Set position to 1000 more than maximum
+    new_position = max_position + 1000
+
+    {:ok, _updated_todo} = WorkspaceService.update_todo(todo, %{position: new_position})
+
+    todos = WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+    {:noreply, assign(socket, :todos, todos)}
   end
 
   @impl true
