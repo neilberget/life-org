@@ -2,6 +2,7 @@
   "dependencies": {
     "@tailwindcss/typography": "^0.5.16",
     "quill": "^2.0.3",
+    "sortablejs": "^1.15.6",
     "turndown": "^7.2.0"
   }
 }

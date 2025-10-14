@@ -158,22 +158,37 @@ p:has(input[type="checkbox"].checkbox-readonly) {
   margin-bottom: 0.5rem;
 }
 
-/* Drag and drop styles */
+/* SortableJS drag and drop styles */
 [data-todo-item] {
   transition: box-shadow 0.2s ease;
+  cursor: move;
 }
 
 [data-todo-item]:hover {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-[data-todo-item].drag-over {
-  border-top: 3px solid #3b82f6 !important;
-  margin-top: -3px;
+/* Ghost element (where item will drop) */
+.sortable-ghost {
+  opacity: 0.4;
+  background-color: #dbeafe !important;
+  border: 2px dashed #3b82f6 !important;
 }
 
-[data-todo-item][draggable="true"] {
-  user-select: none;
+/* Item being dragged */
+.sortable-drag {
+  opacity: 1;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Fallback element for better cross-browser support */
+.sortable-fallback {
+  opacity: 0;
+}
+
+/* Item when first selected */
+.sortable-chosen {
+  cursor: grabbing;
 }
 
 /* Todo keyboard navigation styles */
@@ -183,7 +198,7 @@ p:has(input[type="checkbox"].checkbox-readonly) {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
 }
 
-/* Make the entire todo row clickable for selection */
+/* Make the entire todo row draggable and clickable */
 [data-todo-item] {
-  cursor: pointer;
+  cursor: move;
 }

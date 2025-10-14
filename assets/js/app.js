@@ -22,6 +22,7 @@ import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
 import RichTextEditor from "./hooks/rich_text_editor";
+import Sortable from "sortablejs";
 
 let Hooks = {};
 
@@ -369,101 +370,31 @@ Hooks.TodoDragDropKeyboard = {
   },
 
   setupDragDrop() {
-    const todoItems = this.el.querySelectorAll('[data-todo-item]');
-    
-    todoItems.forEach((item, index) => {
-      // Skip if already set up
-      if (item.hasAttribute('data-drag-setup')) return;
-      
-      item.draggable = true;
-      item.setAttribute('data-drag-setup', 'true');
-      item.style.cursor = 'move';
-      
-      item.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('text/plain', item.dataset.todoId);
-        e.dataTransfer.effectAllowed = 'move';
-        item.style.opacity = '0.5';
-        this.draggedElement = item;
-      });
-      
-      item.addEventListener('dragend', (e) => {
-        item.style.opacity = '1';
-        this.draggedElement = null;
-        // Clean up drag styles
-        this.el.querySelectorAll('[data-todo-item]').forEach(el => {
-          el.classList.remove('drag-over');
-        });
-      });
-      
-      item.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        
-        if (this.draggedElement && this.draggedElement !== item) {
-          item.classList.add('drag-over');
-        }
-      });
-      
-      item.addEventListener('dragleave', (e) => {
-        // Only remove if not dragging into a child element
-        if (!item.contains(e.relatedTarget)) {
-          item.classList.remove('drag-over');
-        }
-      });
-      
-      item.addEventListener('drop', (e) => {
-        e.preventDefault();
-        
-        const draggedId = e.dataTransfer.getData('text/plain');
-        const targetId = item.dataset.todoId;
-        
-        if (draggedId !== targetId) {
-          // Get all visible todo IDs in their current order
-          const allTodos = Array.from(this.el.querySelectorAll('[data-todo-item]'));
-          const draggedElement = allTodos.find(el => el.dataset.todoId === draggedId);
-          const targetElement = item;
-          
-          if (draggedElement && targetElement) {
-            // Determine if we should insert before or after the target
-            const rect = targetElement.getBoundingClientRect();
-            const midY = rect.top + (rect.height / 2);
-            const insertAfter = e.clientY > midY;
-            
-            // Create new order array based on visible todos
-            const newOrder = [];
-            
-            allTodos.forEach(todo => {
-              const todoId = todo.dataset.todoId;
-              
-              if (todoId === targetId) {
-                if (insertAfter) {
-                  newOrder.push(todoId);
-                  if (todoId !== draggedId) {
-                    newOrder.push(draggedId);
-                  }
-                } else {
-                  if (todoId !== draggedId) {
-                    newOrder.push(draggedId);
-                  }
-                  newOrder.push(todoId);
-                }
-              } else if (todoId !== draggedId) {
-                newOrder.push(todoId);
-              }
-            });
-            
-            // If target was dragged, we already added it in the right place above
-            if (draggedId === targetId) {
-              newOrder.push(draggedId);
-            }
-            
-            // Send the new order to the server
-            this.pushEvent('reorder_todos', { todo_ids: newOrder });
-          }
-        }
-        
-        item.classList.remove('drag-over');
-      });
+    // Destroy existing Sortable instance if it exists
+    if (this.sortable) {
+      this.sortable.destroy();
+    }
+
+    // Initialize SortableJS
+    this.sortable = new Sortable(this.el, {
+      animation: 150,
+      handle: '[data-todo-item]',
+      draggable: '[data-todo-item]',
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      dragClass: 'sortable-drag',
+      forceFallback: true,
+      fallbackClass: 'sortable-fallback',
+      fallbackOnBody: true,
+
+      onEnd: (evt) => {
+        // Get all todo IDs in their new order
+        const todoItems = this.el.querySelectorAll('[data-todo-item]');
+        const newOrder = Array.from(todoItems).map(item => item.dataset.todoId);
+
+        // Send the new order to the server
+        this.pushEvent('reorder_todos', { todo_ids: newOrder });
+      }
     });
   },
 
@@ -473,6 +404,9 @@ Hooks.TodoDragDropKeyboard = {
     }
     if (this.handleRowClick) {
       this.el.removeEventListener('click', this.handleRowClick);
+    }
+    if (this.sortable) {
+      this.sortable.destroy();
     }
   },
 
