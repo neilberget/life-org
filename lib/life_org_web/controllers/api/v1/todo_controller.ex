@@ -36,7 +36,7 @@ defmodule LifeOrgWeb.API.V1.TodoController do
             |> apply_order_by(params)
             |> apply_query_filters(params)
             |> Repo.all()
-            |> Repo.preload([:journal_entry, :projects])
+            |> Repo.preload([:workspace, :journal_entry, :projects])
             |> apply_per_workspace_limit(params)
 
           render(conn, :index, todos: todos)
@@ -61,7 +61,7 @@ defmodule LifeOrgWeb.API.V1.TodoController do
             |> apply_order_by(params)
             |> apply_query_filters(params)
             |> Repo.all()
-            |> Repo.preload([:journal_entry, :projects])
+            |> Repo.preload([:workspace, :journal_entry, :projects])
             |> apply_per_workspace_limit(params)
 
           render(conn, :index, todos: todos)
@@ -98,7 +98,7 @@ defmodule LifeOrgWeb.API.V1.TodoController do
           |> apply_order_by(params)
           |> apply_query_filters(params)
           |> Repo.all()
-          |> Repo.preload([:journal_entry, :projects])
+          |> Repo.preload([:workspace, :journal_entry, :projects])
           |> apply_per_workspace_limit(params)
 
         render(conn, :index, todos: todos)

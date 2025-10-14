@@ -135,7 +135,7 @@ defmodule LifeOrg.WorkspaceService do
   def get_todo(id) do
     Todo
     |> Repo.get!(id)
-    |> Repo.preload([:journal_entry, :projects])
+    |> Repo.preload([:workspace, :journal_entry, :projects])
   end
 
   def get_todo(id, user_id) do
@@ -143,7 +143,7 @@ defmodule LifeOrg.WorkspaceService do
       join: w in Workspace,
       on: t.workspace_id == w.id,
       where: t.id == ^id and w.user_id == ^user_id,
-      preload: [:journal_entry, :projects],
+      preload: [:workspace, :journal_entry, :projects],
       select: t
     )
     |> Repo.one()
@@ -157,7 +157,7 @@ defmodule LifeOrg.WorkspaceService do
     |> select([t, c], %{t | comment_count: count(c.id)})
     |> order_by([t], [desc: t.current, asc: t.position, desc: fragment("FIELD(?, 'high', 'medium', 'low')", t.priority), asc: t.inserted_at])
     |> Repo.all()
-    |> Repo.preload([:journal_entry, :projects])
+    |> Repo.preload([:workspace, :journal_entry, :projects])
   end
 
   def list_journal_todos(journal_entry_id) do
@@ -183,7 +183,7 @@ defmodule LifeOrg.WorkspaceService do
     case result do
       {:ok, todo} ->
         todo = associate_todo_with_projects(todo, project_names, workspace_id)
-        {:ok, Repo.preload(todo, [:journal_entry, :projects])}
+        {:ok, Repo.preload(todo, [:workspace, :journal_entry, :projects])}
       error ->
         error
     end
@@ -201,7 +201,7 @@ defmodule LifeOrg.WorkspaceService do
         else
           updated_todo
         end
-        {:ok, Repo.preload(updated_todo, [:journal_entry, :projects], force: true)}
+        {:ok, Repo.preload(updated_todo, [:workspace, :journal_entry, :projects], force: true)}
       error -> 
         error
     end

@@ -23,6 +23,7 @@ defmodule LifeOrgWeb.API.V1.TodoJSON do
       tags: todo.tags || [],
       position: todo.position,
       workspace_id: todo.workspace_id,
+      workspace_name: workspace_name(todo),
       journal_entry_id: todo.journal_entry_id,
       projects: projects_data(todo),
       inserted_at: todo.inserted_at,
@@ -43,4 +44,7 @@ defmodule LifeOrgWeb.API.V1.TodoJSON do
   end
 
   defp projects_data(_), do: []
+
+  defp workspace_name(%{workspace: %{name: name}}), do: name
+  defp workspace_name(_), do: nil
 end
