@@ -371,14 +371,14 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         />
         
         <div class="flex-1 min-w-0">
-          <div class="truncate flex items-center">
-            <!-- Project prefix if exists -->
+          <!-- Line 1: Project + Title -->
+          <div class="flex items-center gap-1 min-w-0">
             <%= if @todo.projects && length(@todo.projects) > 0 do %>
               <%= for project <- Enum.take(@todo.projects, 1) do %>
                 <button
                   phx-click="filter_by_project"
                   phx-value-project={project.name}
-                  class="text-xs font-medium px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer mr-1 flex-shrink-0"
+                  class="text-xs font-medium px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
                   style={"background-color: #{project.color}20; color: #{project.color};"}
                   title={"Filter by project: #{project.name}"}
                 >
@@ -389,55 +389,60 @@ defmodule LifeOrgWeb.Components.TodoComponent do
                 </button>
               <% end %>
               <%= if length(@todo.projects) > 1 do %>
-                <span class="text-xs text-gray-400 mr-1 flex-shrink-0">+<%= length(@todo.projects) - 1 %></span>
+                <span class="text-xs text-gray-400 flex-shrink-0">+<%= length(@todo.projects) - 1 %></span>
               <% end %>
             <% end %>
-            
-            <span 
-              class={"text-sm #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"} cursor-pointer truncate"}
+
+            <span
+              class={"text-sm #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"} cursor-pointer truncate min-w-0"}
               phx-click="view_todo"
               phx-value-id={@todo.id}
             >
               <%= @todo.title %>
             </span>
-            
-            <!-- Tags -->
-            <%= if @todo.tags && length(@todo.tags) > 0 do %>
-              <span class="ml-1 flex-shrink-0">
-                <%= for tag <- Enum.take(@todo.tags, 2) do %>
-                  <button
-                    phx-click="filter_by_tag"
-                    phx-value-tag={tag}
-                    class="text-xs text-blue-600 hover:text-blue-800 transition-colors cursor-pointer ml-0.5"
-                    title={"Filter by ##{tag}"}
-                  >
-                    #<%= tag %>
-                  </button>
+          </div>
+
+          <!-- Line 2: Tags + Metadata (only shown if tags or metadata exist) -->
+          <%= if (@todo.tags && length(@todo.tags) > 0) || @todo.due_date || (@todo.comment_count && @todo.comment_count > 0) do %>
+            <div class="flex items-center gap-1 mt-0.5">
+              <!-- Tags -->
+              <%= if @todo.tags && length(@todo.tags) > 0 do %>
+                <span class="flex items-center flex-shrink-0">
+                  <%= for tag <- Enum.take(@todo.tags, 2) do %>
+                    <button
+                      phx-click="filter_by_tag"
+                      phx-value-tag={tag}
+                      class="text-xs text-blue-600 hover:text-blue-800 transition-colors cursor-pointer ml-0.5 first:ml-0"
+                      title={"Filter by ##{tag}"}
+                    >
+                      #<%= tag %>
+                    </button>
+                  <% end %>
+                  <%= if length(@todo.tags) > 2 do %>
+                    <span class="text-xs text-gray-400 ml-0.5">+<%= length(@todo.tags) - 2 %></span>
+                  <% end %>
+                </span>
+              <% end %>
+
+              <!-- Other metadata -->
+              <span class="text-xs text-gray-500 space-x-1 flex-shrink-0">
+                <button
+                  phx-click="cycle_todo_priority"
+                  phx-value-id={@todo.id}
+                  class="inline-block hover:scale-125 transition-transform cursor-pointer"
+                  title={"Priority: #{@todo.priority || "medium"} (click to change)"}
+                >
+                  <span class={"inline-block w-2 h-2 rounded-full #{priority_dot_color(@todo.priority)}"}></span>
+                </button>
+                <%= if @todo.due_date do %>
+                  <span>📅</span>
                 <% end %>
-                <%= if length(@todo.tags) > 2 do %>
-                  <span class="text-xs text-gray-400 ml-0.5">+<%= length(@todo.tags) - 2 %></span>
+                <%= if @todo.comment_count && @todo.comment_count > 0 do %>
+                  <span>💬<%= @todo.comment_count %></span>
                 <% end %>
               </span>
-            <% end %>
-            
-            <!-- Other metadata -->
-            <span class="text-xs text-gray-500 ml-2 space-x-1 flex-shrink-0">
-              <button
-                phx-click="cycle_todo_priority"
-                phx-value-id={@todo.id}
-                class="inline-block hover:scale-125 transition-transform cursor-pointer"
-                title={"Priority: #{@todo.priority || "medium"} (click to change)"}
-              >
-                <span class={"inline-block w-2 h-2 rounded-full #{priority_dot_color(@todo.priority)}"}></span>
-              </button>
-              <%= if @todo.due_date do %>
-                <span>📅</span>
-              <% end %>
-              <%= if @todo.comment_count && @todo.comment_count > 0 do %>
-                <span>💬<%= @todo.comment_count %></span>
-              <% end %>
-            </span>
-          </div>
+            </div>
+          <% end %>
         </div>
 
         <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
