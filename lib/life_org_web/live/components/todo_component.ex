@@ -943,9 +943,6 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Tags</label>
-          <%= if @tag_filter do %>
-            <p class="text-xs text-blue-600 mb-1">DEBUG: Tag filter active: <%= @tag_filter %></p>
-          <% end %>
           <input
             type="text"
             name="todo[tags_input]"
@@ -958,9 +955,6 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Projects</label>
-          <%= if @project_filter do %>
-            <p class="text-xs text-green-600 mb-1">DEBUG: Project filter active: <%= @project_filter %></p>
-          <% end %>
           
           <%= if length(@workspace_projects) > 0 do %>
             <div class="mb-3 p-3 bg-gray-50 rounded-lg">

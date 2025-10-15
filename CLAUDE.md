@@ -259,6 +259,14 @@ mix phx.server
 - **Todo Views**: Click todo to view details, hover to see edit/delete buttons
 - **Workspace Support**: Todos are scoped to workspaces (default workspace auto-created)
 - **Journal Entry References**: Todos created from journal entries maintain bidirectional links for context traceability
+- **Manual Reordering**: Drag-and-drop reordering using SortableJS library for smooth, reliable experience
+  - Quick move buttons (up/down arrows) to instantly send todos to top/bottom of list
+  - Position-based ordering with 1000-increment spacing for efficient reordering
+  - Mobile-friendly with 200ms touch delay to allow scrolling vs dragging
+- **Compact View Layout**: Two-line mobile-optimized layout
+  - Line 1: Project badge + Todo title
+  - Line 2: Tags + Metadata (conditionally shown)
+  - Ensures title text has adequate space on narrow screens
 
 ### LiveView Event Handlers (organizer_live.ex)
 - `add_todo`: Opens the add todo modal
