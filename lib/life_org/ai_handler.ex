@@ -103,17 +103,16 @@ defmodule LifeOrg.AIHandler do
     - Use a clear, concise title (the main action)
     - Keep descriptions brief and high-level
     - Set appropriate priority and tags based on the journal content
-    - ASSIGN APPROPRIATE PROJECTS: When the journal mentions specific projects, systems, or work areas, match them to existing projects or create new ones. For example, if the journal mentions "mobile app", "website", "API", "client work", etc., assign appropriate project names.
-    - Use existing projects when possible, but create new project names when the work doesn't fit existing categories
+    - PROJECTS: Only assign a project if the todo clearly fits an existing project. DO NOT create new projects. If there's no clear match with existing projects, leave the project field empty.
     - Avoid detailed step-by-step instructions or comprehensive task breakdowns
-    
-    PROJECT MATCHING EXAMPLES:
-    - Journal mentions "fix the mobile app bug" → assign to "Mobile App" project
-    - Journal mentions "update the website design" → assign to "Website" or "Web App" project  
-    - Journal mentions "client meeting about XYZ" → assign to "XYZ Client" project
-    - Journal mentions "API documentation" → assign to "API Development" project
-    
-    Example: Instead of "Review implementation, design function, add types, test with games, document usage" just create "Add auto-refresh function to heygg-common" and assign to "HeyGG Common" project
+
+    PROJECT ASSIGNMENT GUIDELINES:
+    - Review the list of existing projects provided above
+    - Only assign a project if there's a clear, strong match between the todo and an existing project
+    - When in doubt, leave the project field empty rather than creating a new project
+    - It's perfectly fine for todos to have no project assigned
+
+    Example: Instead of "Review implementation, design function, add types, test with games, document usage" just create "Add auto-refresh function to heygg-common"
     """
     
     # Define tools for journal todo extraction
@@ -459,14 +458,14 @@ defmodule LifeOrg.AIHandler do
     - Existing tags and projects that are relevant to the new task
     - Common categorizations like "work", "personal", "urgent", "project", "store", "health", etc.
     - Context from the user's message or journal entries
-    
+
     PROJECT ASSIGNMENT GUIDELINES:
-    - Always assign todos to appropriate projects when the context suggests specific work areas, systems, or initiatives
-    - Use existing projects when the task clearly fits an existing project category
-    - Create new projects with descriptive names when tasks don't fit existing projects
-    - Examples: "Mobile App", "Website Redesign", "Client X", "API Development", "Marketing Campaign", etc.
-    
-    Use existing tags and projects when possible to maintain consistency, but feel free to suggest new ones when appropriate.
+    - Only assign a project if the todo clearly fits an existing project
+    - DO NOT create new projects - only use projects that already exist
+    - When in doubt, leave the project field empty rather than creating a new project
+    - It's perfectly fine for todos to have no project assigned
+
+    Use existing tags and projects to maintain consistency. You can suggest new tags when appropriate, but never create new projects.
     
     SUBTASK FORMATTING: When creating todo descriptions with subtasks, you can use GitHub-style markdown checkboxes that will become interactive:
     - Use `- [ ]` for unchecked subtasks
@@ -560,7 +559,7 @@ defmodule LifeOrg.AIHandler do
             "projects" => %{
               "type" => "array",
               "items" => %{"type" => "string"},
-              "description" => "Project names to organize this todo. Will create projects if they don't exist. Use descriptive names like 'Web App', 'Mobile App', 'API Development', etc."
+              "description" => "Project names to organize this todo. Only use existing project names - do not create new projects. Leave empty if no existing project is a good fit."
             }
           },
           "required" => ["title"]
@@ -597,7 +596,7 @@ defmodule LifeOrg.AIHandler do
             "projects" => %{
               "type" => "array",
               "items" => %{"type" => "string"},
-              "description" => "New project names for the todo. Will create projects if they don't exist."
+              "description" => "New project names for the todo. Only use existing project names - do not create new projects."
             }
           },
           "required" => ["id"]
@@ -1225,7 +1224,7 @@ Use this project information to provide more targeted advice and suggestions tha
             "projects" => %{
               "type" => "array",
               "items" => %{"type" => "string"},
-              "description" => "Project names to organize this todo. Will create projects if they don't exist."
+              "description" => "Project names to organize this todo. Only use existing project names - do not create new projects."
             }
           },
           "required" => ["title"]
@@ -1258,7 +1257,7 @@ Use this project information to provide more targeted advice and suggestions tha
             "projects" => %{
               "type" => "array",
               "items" => %{"type" => "string"},
-              "description" => "New project names for the todo. Will create projects if they don't exist."
+              "description" => "New project names for the todo. Only use existing project names - do not create new projects."
             },
             "due_date" => %{
               "type" => "string",
