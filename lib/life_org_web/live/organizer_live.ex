@@ -148,6 +148,58 @@ defmodule LifeOrgWeb.OrganizerLive do
   end
 
   @impl true
+  def handle_event("upload_image_base64", %{"filename" => filename, "content_type" => content_type, "size" => size, "data" => base64_data}, socket) do
+    user_id = socket.assigns.current_user.id
+    require Logger
+    Logger.info("Received base64 image upload: #{filename}, type: #{content_type}, size: #{size}")
+
+    try do
+      # Decode the base64 data (remove data URL prefix if present)
+      base64_content = case String.split(base64_data, ",", parts: 2) do
+        [_prefix, data] -> data
+        [data] -> data
+      end
+
+      binary_data = Base.decode64!(base64_content)
+
+      # Create a temporary file
+      temp_path = Path.join(System.tmp_dir!(), "upload_#{:erlang.unique_integer()}_#{filename}")
+      File.write!(temp_path, binary_data)
+
+      # Save using AttachmentService
+      case LifeOrg.AttachmentService.save_upload(user_id, %{path: temp_path, filename: filename}) do
+        {:ok, saved_filename} ->
+          # Create attachment record
+          {:ok, attachment} = LifeOrg.AttachmentService.create_attachment(%{
+            user_id: user_id,
+            filename: saved_filename,
+            original_filename: filename,
+            content_type: content_type,
+            file_size: byte_size(binary_data)
+          })
+
+          # Clean up temp file
+          File.rm(temp_path)
+
+          # Return URL to client
+          url = LifeOrg.AttachmentService.get_url_path(user_id, saved_filename)
+          Logger.info("Image saved successfully: #{url}")
+
+          {:noreply, push_event(socket, "images_uploaded", %{files: [%{url: url, filename: saved_filename, id: attachment.id}]})}
+
+        {:error, reason} ->
+          Logger.error("Failed to save image: #{inspect(reason)}")
+          File.rm(temp_path)
+          {:noreply, socket}
+      end
+    rescue
+      e ->
+        Logger.error("Error processing base64 upload: #{inspect(e)}")
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("delete_journal_entry", %{"id" => id}, socket) do
     entry = Repo.get!(JournalEntry, id)
     {:ok, _} = WorkspaceService.delete_journal_entry(entry)

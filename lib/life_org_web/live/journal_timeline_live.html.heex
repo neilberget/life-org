@@ -468,4 +468,17 @@
   .timeline-scroll::-webkit-scrollbar-thumb {
     @apply bg-slate-300 rounded-full hover:bg-slate-400;
   }
+
+  /* Style images in prose content */
+  .prose img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    margin: 1rem 0;
+  }
+
+  /* Drag-over highlighting for editor */
+  .drag-over {
+    @apply ring-2 ring-blue-400 bg-blue-50;
+  }
 </style>

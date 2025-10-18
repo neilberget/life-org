@@ -24,24 +24,16 @@
       <%= if Map.get(assigns, :show_mobile_menu, false) do %>
         <div class="bg-gray-50 rounded-lg p-3 space-y-2 mb-2">
           <form phx-change="switch_workspace" class="mb-2">
-            <div class="relative">
-              <select
-                name="id"
-                value={@current_workspace.id}
-                class="w-full appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
-              >
-                <%= for workspace <- @workspaces do %>
-                  <option value={workspace.id}>
-                    <%= workspace.name %>
-                  </option>
-                <% end %>
-              </select>
-              <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
-              </div>
-            </div>
+            <select
+              name="id"
+              class="w-full bg-white border border-gray-300 rounded-md pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <%= for workspace <- @workspaces do %>
+                <option value={workspace.id} selected={workspace.id == @current_workspace.id}>
+                  <%= workspace.name %>
+                </option>
+              <% end %>
+            </select>
           </form>
 
           <div class="w-full">
@@ -94,30 +86,22 @@
     <!-- Desktop Header -->
     <div class="hidden md:block">
       <div class="flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <div class="flex items-center space-x-2">
-            <div class="w-4 h-4 rounded-full" style={"background-color: #{@current_workspace.color}"}></div>
-            <h1 class="text-xl font-semibold text-gray-900"><%= @current_workspace.name %></h1>
+        <div class="flex items-center space-x-4">
+          <div class="flex items-center space-x-2 min-w-0">
+            <div class="w-4 h-4 rounded-full flex-shrink-0" style={"background-color: #{@current_workspace.color}"}></div>
+            <h1 class="text-xl font-semibold text-gray-900 truncate"><%= @current_workspace.name %></h1>
           </div>
-          <form phx-change="switch_workspace">
-            <div class="relative">
-              <select
-                name="id"
-                value={@current_workspace.id}
-                class="appearance-none bg-gray-50 border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
-              >
-                <%= for workspace <- @workspaces do %>
-                  <option value={workspace.id}>
-                    <%= workspace.name %>
-                  </option>
-                <% end %>
-              </select>
-              <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
-              </div>
-            </div>
+          <form phx-change="switch_workspace" class="flex-shrink-0">
+            <select
+              name="id"
+              class="bg-gray-50 border border-gray-300 rounded-md pl-3 pr-8 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <%= for workspace <- @workspaces do %>
+                <option value={workspace.id} selected={workspace.id == @current_workspace.id}>
+                  <%= workspace.name %>
+                </option>
+              <% end %>
+            </select>
           </form>
         </div>
 
@@ -503,7 +487,7 @@
         <!-- Mobile: Tabbed view -->
         <div class="md:hidden w-full flex flex-col h-full">
           <!-- Mobile Tab Content -->
-          <div class="flex-1 overflow-y-auto pb-16">
+          <div class="flex-1 overflow-y-auto pb-24">
             <%= case Map.get(assigns, :mobile_tab, "journal") do %>
               <% "journal" -> %>
                 <div class="h-full">

@@ -41,24 +41,57 @@ defmodule LifeOrg.EmbeddingsWorker do
         case EmbeddingsService.update_journal_entry_embedding(entry) do
           {:ok, _updated_entry} ->
             Logger.debug("Generated embedding for journal entry #{entry.id}")
+          {:error, :content_too_long} ->
+            # Mark as processed with an empty embedding so we don't retry
+            Logger.warning("Journal entry #{entry.id} is too long for embeddings (#{String.length(entry.content)} chars), marking as processed")
+            mark_journal_entry_as_skipped(entry)
+          {:error, :no_api_key} ->
+            # Don't log error for missing API key (already logged at startup)
+            :ok
           {:error, reason} ->
             Logger.error("Failed to generate embedding for journal entry #{entry.id}: #{inspect(reason)}")
         end
-        
+
         Process.sleep(100)
       end)
-      
+
       Enum.each(todos, fn todo ->
         case EmbeddingsService.update_todo_embedding(todo) do
           {:ok, _updated_todo} ->
             Logger.debug("Generated embedding for todo #{todo.id}")
+          {:error, :content_too_long} ->
+            # Mark as processed with an empty embedding so we don't retry
+            text_length = String.length("#{todo.title} #{todo.description || ""}")
+            Logger.warning("Todo #{todo.id} is too long for embeddings (#{text_length} chars), marking as processed")
+            mark_todo_as_skipped(todo)
+          {:error, :no_api_key} ->
+            # Don't log error for missing API key (already logged at startup)
+            :ok
           {:error, reason} ->
             Logger.error("Failed to generate embedding for todo #{todo.id}: #{inspect(reason)}")
         end
-        
+
         Process.sleep(100)
       end)
     end
+  end
+
+  defp mark_journal_entry_as_skipped(entry) do
+    entry
+    |> Ecto.Changeset.change(%{
+      embedding: [],
+      embedding_generated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+    |> LifeOrg.Repo.update()
+  end
+
+  defp mark_todo_as_skipped(todo) do
+    todo
+    |> Ecto.Changeset.change(%{
+      embedding: [],
+      embedding_generated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    })
+    |> LifeOrg.Repo.update()
   end
 
   def trigger_processing do

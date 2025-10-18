@@ -68,14 +68,14 @@ let RichTextEditor = {
             }
         });
 
-        // Configure Quill toolbar
+        // Configure Quill toolbar with image support
         const toolbarOptions = [
             ['bold', 'italic', 'underline', 'strike'],
             ['blockquote', 'code-block'],
             [{ 'header': 1 }, { 'header': 2 }],
             [{ 'list': 'ordered' }, { 'list': 'bullet' }],
             [{ 'script': 'sub' }, { 'script': 'super' }],
-            ['link'],
+            ['link', 'image'],
             ['clean']
         ];
 
@@ -116,12 +116,44 @@ let RichTextEditor = {
             placeholder: this.el.dataset.placeholder || 'Write something...'
         });
 
+        // Prevent Quill from handling images automatically
+        // This stops base64 conversion and forces our upload flow
+        this.quill.root.addEventListener('drop', (e) => {
+            // Check if dropped files contain images
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                const imageFiles = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+                if (imageFiles.length > 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Intercepted image drop, uploading...');
+                    this.uploadImages(imageFiles);
+                    return false;
+                }
+            }
+        }, true); // Use capture phase to intercept before Quill
+
+        this.quill.root.addEventListener('paste', (e) => {
+            // Check if pasted content contains images
+            if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+                const imageFiles = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/'));
+                if (imageFiles.length > 0) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.uploadImages(imageFiles);
+                    return false;
+                }
+            }
+        }, true); // Use capture phase
+
         // Set initial content if provided
         const initialContent = this.el.dataset.initialContent;
         if (initialContent && initialContent.trim() !== '') {
             // Convert markdown to HTML for Quill display
             this.quill.root.innerHTML = this.markdownToHtml(initialContent);
         }
+
+        // Setup image upload handler
+        this.setupImageHandler();
 
         // Handle content changes with debouncing
         let timeout;
@@ -188,14 +220,15 @@ let RichTextEditor = {
     getMarkdownContent() {
         const html = this.quill.root.innerHTML;
         console.log("Converting HTML to markdown:", html);
-        
+
         // Convert HTML to Markdown
         let markdown = this.turndownService.turndown(html);
         console.log("Initial markdown:", markdown);
 
-        // Clean up any escaped characters that might interfere with checkbox syntax
+        // Clean up any escaped characters that might interfere with checkbox syntax or images
         markdown = markdown
             .replace(/\\(\[|\])/g, '$1')  // Remove escaping from brackets
+            .replace(/\\\!/g, '!')        // Remove escaping from exclamation marks (important for images)
             .replace(/\\\-/g, '-')        // Remove escaping from dashes
             .replace(/\n\n+/g, '\n\n')    // Normalize multiple newlines
             .replace(/\[\]/g, '[ ]')  // Ensure space in empty checkboxes
@@ -265,6 +298,14 @@ let RichTextEditor = {
                 const text = trimmed.replace(/^\d+\.\s*/, '');
                 html += '<li>' + this.processInlineMarkdown(text) + '</li>';
             }
+            // Handle images
+            else if (trimmed.match(/^!\[([^\]]*)\]\(([^\)]+)\)/)) {
+                if (inList) { html += '</ul>'; inList = false; }
+                const match = trimmed.match(/^!\[([^\]]*)\]\(([^\)]+)\)/);
+                const alt = match[1] || 'image';
+                const src = match[2];
+                html += `<img src="${src}" alt="${alt}" style="max-width: 100%;" />`;
+            }
             // Handle regular content
             else {
                 if (inList) {
@@ -293,6 +334,116 @@ let RichTextEditor = {
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/`(.*?)`/g, '<code>$1</code>');
+    },
+
+    setupImageHandler() {
+        const toolbar = this.quill.getModule('toolbar');
+        toolbar.addHandler('image', () => {
+            this.selectLocalImage();
+        });
+
+        // Listen for images_uploaded event from LiveView
+        this.handleEvent('images_uploaded', ({ files }) => {
+            console.log('Received images_uploaded event with files:', files);
+            files.forEach(file => {
+                console.log('Inserting image markdown for:', file.url);
+                this.insertImageMarkdown(file.url);
+            });
+        });
+    },
+
+    selectLocalImage() {
+        const input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('accept', 'image/jpeg,image/jpg,image/png,image/gif,image/webp');
+        input.setAttribute('multiple', 'multiple');
+        input.click();
+
+        input.onchange = () => {
+            const files = Array.from(input.files);
+            if (files && files.length > 0) {
+                this.uploadImages(files);
+            }
+        };
+    },
+
+    setupDragAndDrop() {
+        const editor = this.quill.root;
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            editor.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        // Highlight drop area when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            editor.addEventListener(eventName, () => {
+                editor.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            editor.addEventListener(eventName, () => {
+                editor.classList.remove('drag-over');
+            }, false);
+        });
+
+        // Handle dropped files
+        editor.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = Array.from(dt.files).filter(file => file.type.startsWith('image/'));
+
+            if (files.length > 0) {
+                this.uploadImages(files);
+            }
+        }, false);
+    },
+
+    uploadImages(files) {
+        console.log('Uploading files:', files);
+
+        // Upload each file
+        files.forEach((file, index) => {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                const base64Data = e.target.result;
+                console.log(`File ${index} loaded, size: ${base64Data.length} bytes`);
+
+                // Send the file data to LiveView
+                this.pushEvent('upload_image_base64', {
+                    filename: file.name,
+                    content_type: file.type,
+                    size: file.size,
+                    data: base64Data
+                });
+            };
+
+            reader.onerror = (error) => {
+                console.error('Error reading file:', error);
+            };
+
+            reader.readAsDataURL(file);
+        });
+    },
+
+    insertImageMarkdown(url) {
+        // Get current cursor position
+        const range = this.quill.getSelection(true);
+        const position = range ? range.index : this.quill.getLength();
+
+        // Insert markdown image syntax at cursor position
+        const markdown = `![image](${url})`;
+        this.quill.insertText(position, markdown + '\n');
+
+        // Move cursor after inserted text
+        this.quill.setSelection(position + markdown.length + 1);
+
+        // Trigger content update
+        this.pushContentUpdate();
     },
 
     destroyed() {

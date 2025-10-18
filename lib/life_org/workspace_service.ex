@@ -1,6 +1,6 @@
 defmodule LifeOrg.WorkspaceService do
   import Ecto.Query, warn: false
-  alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Conversation, Projects}
+  alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Conversation, Projects, AttachmentService}
 
   def list_workspaces(user_id) do
     Workspace
@@ -128,6 +128,10 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   def delete_journal_entry(%JournalEntry{} = entry) do
+    # Delete associated attachments (files and database records)
+    AttachmentService.delete_journal_attachments(entry.id)
+
+    # Delete the journal entry (database will cascade delete conversations via foreign key)
     Repo.delete(entry)
   end
 
@@ -208,7 +212,10 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   def delete_todo(%Todo{} = todo) do
-    # Database will cascade delete conversations and chat_messages automatically
+    # Delete associated attachments (files and database records)
+    AttachmentService.delete_todo_attachments(todo.id)
+
+    # Delete the todo (database will cascade delete conversations and chat_messages automatically)
     Repo.delete(todo)
   end
 

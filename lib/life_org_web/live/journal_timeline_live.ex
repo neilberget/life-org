@@ -6,6 +6,7 @@ defmodule LifeOrgWeb.JournalTimelineLive do
   alias LifeOrg.WorkspaceService
   alias LifeOrg.AIHandler
   alias LifeOrg.ConversationService
+  alias LifeOrg.AttachmentService
   alias LifeOrg.Repo
   alias LifeOrg.JournalEntry
 
@@ -126,7 +127,7 @@ defmodule LifeOrgWeb.JournalTimelineLive do
     
     {show_chat, chat_journal_id, chat_journal_entry, conversations, current_conversation, chat_messages} = chat_data
     
-    socket = 
+    socket =
       socket
       |> assign(:current_workspace, current_workspace)
       |> assign(:workspaces, workspaces)
@@ -144,6 +145,11 @@ defmodule LifeOrgWeb.JournalTimelineLive do
       |> assign(:current_journal_conversation, current_conversation)
       |> assign(:show_todos_section, false)
       |> assign(:todos_section_journal_id, nil)
+      |> allow_upload(:images,
+        accept: ~w(.jpg .jpeg .png .gif .webp),
+        max_entries: 10,
+        max_file_size: 5_000_000
+      )
     
     # If we loaded a specific entry, scroll to it after mount
     socket = if should_scroll && selected_entry do
@@ -516,6 +522,123 @@ defmodule LifeOrgWeb.JournalTimelineLive do
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("upload_image_base64", %{"filename" => filename, "content_type" => content_type, "size" => size, "data" => base64_data}, socket) do
+    user_id = socket.assigns.current_user.id
+    require Logger
+    Logger.info("Received base64 image upload: #{filename}, type: #{content_type}, size: #{size}")
+
+    try do
+      # Decode the base64 data (remove data URL prefix if present)
+      base64_content = case String.split(base64_data, ",", parts: 2) do
+        [_prefix, data] -> data
+        [data] -> data
+      end
+
+      binary_data = Base.decode64!(base64_content)
+
+      # Create a temporary file
+      temp_path = Path.join(System.tmp_dir!(), "upload_#{:erlang.unique_integer()}_#{filename}")
+      File.write!(temp_path, binary_data)
+
+      # Save using AttachmentService
+      case AttachmentService.save_upload(user_id, %{path: temp_path, filename: filename}) do
+        {:ok, saved_filename} ->
+          # Create attachment record
+          {:ok, attachment} = AttachmentService.create_attachment(%{
+            user_id: user_id,
+            filename: saved_filename,
+            original_filename: filename,
+            content_type: content_type,
+            file_size: byte_size(binary_data)
+          })
+
+          # Clean up temp file
+          File.rm(temp_path)
+
+          # Return URL to client
+          url = AttachmentService.get_url_path(user_id, saved_filename)
+          Logger.info("Image saved successfully: #{url}")
+
+          {:noreply, push_event(socket, "images_uploaded", %{files: [%{url: url, filename: saved_filename, id: attachment.id}]})}
+
+        {:error, reason} ->
+          Logger.error("Failed to save image: #{inspect(reason)}")
+          File.rm(temp_path)
+          {:noreply, socket}
+      end
+    rescue
+      e ->
+        Logger.error("Error processing base64 upload: #{inspect(e)}")
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("validate_upload", _params, socket) do
+    # Just validate, don't consume yet
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("upload_image", _params, socket) do
+    user_id = socket.assigns.current_user.id
+    require Logger
+    Logger.info("Upload image event received for user #{user_id}")
+
+    # Check if there are any completed uploads ready to consume
+    uploaded_files =
+      consume_uploaded_entries(socket, :images, fn %{path: path}, entry ->
+        Logger.info("Processing uploaded file: #{entry.client_name}, type: #{entry.client_type}")
+
+        # Save the file to disk
+        case AttachmentService.save_upload(user_id, %{path: path, filename: entry.client_name}) do
+          {:ok, filename} ->
+            # Get file info
+            %{size: file_size} = File.stat!(path)
+            Logger.info("File saved successfully: #{filename}, size: #{file_size}")
+
+            # Create attachment record (not linked to any entry yet)
+            {:ok, attachment} =
+              AttachmentService.create_attachment(%{
+                user_id: user_id,
+                filename: filename,
+                original_filename: entry.client_name,
+                content_type: entry.client_type,
+                file_size: file_size
+              })
+
+            # Return the markdown syntax for the image
+            url = AttachmentService.get_url_path(user_id, filename)
+            Logger.info("Image URL generated: #{url}")
+            {:ok, %{url: url, filename: filename, id: attachment.id}}
+
+          {:error, reason} ->
+            Logger.error("Failed to save upload: #{inspect(reason)}")
+            {:postpone, reason}
+        end
+      end)
+
+    Logger.info("Uploaded files count: #{length(uploaded_files)}")
+    Logger.info("Files: #{inspect(uploaded_files)}")
+
+    # Only send event if files were actually uploaded
+    socket = if length(uploaded_files) > 0 do
+      Logger.info("Pushing images_uploaded event with #{length(uploaded_files)} files")
+      push_event(socket, "images_uploaded", %{files: uploaded_files})
+    else
+      Logger.warn("No files were uploaded")
+      socket
+    end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :images, ref)}
   end
 
   defp get_next_entry(entries, nil) do
