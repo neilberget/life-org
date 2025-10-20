@@ -1,7 +1,8 @@
 defmodule LifeOrg.Attachment do
   use Ecto.Schema
   import Ecto.Changeset
-  alias LifeOrg.{User, JournalEntry, Todo}
+  alias LifeOrg.{JournalEntry, Todo}
+  alias LifeOrg.Accounts.User
 
   schema "attachments" do
     field :filename, :string

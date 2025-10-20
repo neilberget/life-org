@@ -156,6 +156,7 @@ defmodule LifeOrg.WorkspaceService do
   def list_todos(workspace_id) do
     Todo
     |> where([t], t.workspace_id == ^workspace_id)
+    |> where([t], t.is_template == false or is_nil(t.is_template))  # Exclude recurring templates
     |> join(:left, [t], c in assoc(t, :comments))
     |> group_by([t], t.id)
     |> select([t, c], %{t | comment_count: count(c.id)})
@@ -167,6 +168,7 @@ defmodule LifeOrg.WorkspaceService do
   def list_journal_todos(journal_entry_id) do
     Todo
     |> where([t], t.journal_entry_id == ^journal_entry_id)
+    |> where([t], t.is_template == false or is_nil(t.is_template))  # Exclude recurring templates
     |> join(:left, [t], c in assoc(t, :comments))
     |> group_by([t], t.id)
     |> select([t, c], %{t | comment_count: count(c.id)})
@@ -321,5 +323,24 @@ defmodule LifeOrg.WorkspaceService do
         |> Repo.update_all(set: [position: position])
       end)
     end)
+  end
+
+  # Recurring todo helper functions
+  def get_recurring_template(todo_id) do
+    Repo.get_by(Todo, id: todo_id, is_template: true)
+  end
+
+  def get_template_for_occurrence(%Todo{parent_todo_id: parent_id}) when not is_nil(parent_id) do
+    Repo.get(Todo, parent_id)
+  end
+
+  def get_template_for_occurrence(_), do: nil
+
+  def list_recurring_templates(workspace_id) do
+    Todo
+    |> where([t], t.workspace_id == ^workspace_id)
+    |> where([t], t.is_template == true)
+    |> order_by([t], asc: t.title)
+    |> Repo.all()
   end
 end

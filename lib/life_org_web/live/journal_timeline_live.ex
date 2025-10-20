@@ -472,56 +472,15 @@ defmodule LifeOrgWeb.JournalTimelineLive do
     conversation_id_int = String.to_integer(conversation_id)
     # Find the conversation and load its messages
     conversation = ConversationService.get_conversation_with_messages(conversation_id_int)
-    
-    messages = 
+
+    messages =
       conversation.chat_messages
       |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
-    
+
     {:noreply,
      socket
      |> assign(:current_journal_conversation, conversation)
      |> assign(:journal_chat_messages, messages)}
-  end
-
-  @impl true
-  def handle_info({:journal_ai_response, response, _tool_actions, conversation_id, journal_id}, socket) do
-    # Only save assistant response to database if there's actual content
-    if String.trim(response) != "" do
-      {:ok, _assistant_message} =
-        ConversationService.add_message_to_conversation(
-          conversation_id,
-          "assistant",
-          response
-        )
-    end
-    
-    # Only update if this is for the current journal chat
-    if socket.assigns[:chat_journal_id] == journal_id do
-      # Load fresh messages from database
-      conversation_with_messages =
-        ConversationService.get_conversation_with_messages(conversation_id)
-      
-      display_messages = 
-        conversation_with_messages.chat_messages
-        |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
-      
-      {:noreply,
-       socket
-       |> assign(:journal_chat_messages, display_messages)
-       |> assign(:processing_message, false)}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  @impl true
-  def handle_info({:extracted_todos, _todo_actions, workspace_id, _journal_entry_id, _conversation_messages}, socket) do
-    # Only update if this is for the current workspace
-    if workspace_id == socket.assigns.current_workspace.id do
-      {:noreply, assign(socket, :processing_journal_todos, false)}
-    else
-      {:noreply, socket}
-    end
   end
 
   @impl true
@@ -629,7 +588,7 @@ defmodule LifeOrgWeb.JournalTimelineLive do
       Logger.info("Pushing images_uploaded event with #{length(uploaded_files)} files")
       push_event(socket, "images_uploaded", %{files: uploaded_files})
     else
-      Logger.warn("No files were uploaded")
+      Logger.warning("No files were uploaded")
       socket
     end
 
@@ -639,6 +598,47 @@ defmodule LifeOrgWeb.JournalTimelineLive do
   @impl true
   def handle_event("cancel_upload", %{"ref" => ref}, socket) do
     {:noreply, cancel_upload(socket, :images, ref)}
+  end
+
+  @impl true
+  def handle_info({:journal_ai_response, response, _tool_actions, conversation_id, journal_id}, socket) do
+    # Only save assistant response to database if there's actual content
+    if String.trim(response) != "" do
+      {:ok, _assistant_message} =
+        ConversationService.add_message_to_conversation(
+          conversation_id,
+          "assistant",
+          response
+        )
+    end
+    
+    # Only update if this is for the current journal chat
+    if socket.assigns[:chat_journal_id] == journal_id do
+      # Load fresh messages from database
+      conversation_with_messages =
+        ConversationService.get_conversation_with_messages(conversation_id)
+      
+      display_messages = 
+        conversation_with_messages.chat_messages
+        |> Enum.map(fn msg -> %{role: msg.role, content: msg.content} end)
+      
+      {:noreply,
+       socket
+       |> assign(:journal_chat_messages, display_messages)
+       |> assign(:processing_message, false)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:extracted_todos, _todo_actions, workspace_id, _journal_entry_id, _conversation_messages}, socket) do
+    # Only update if this is for the current workspace
+    if workspace_id == socket.assigns.current_workspace.id do
+      {:noreply, assign(socket, :processing_journal_todos, false)}
+    else
+      {:noreply, socket}
+    end
   end
 
   defp get_next_entry(entries, nil) do

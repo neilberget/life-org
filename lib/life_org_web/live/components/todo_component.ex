@@ -178,160 +178,12 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </div>
         </div>
 
-        <!-- Incoming Todos Section -->
-        <%= if Map.get(assigns, :incoming_todos, []) != [] && length(@incoming_todos) > 0 do %>
-          <.incoming_todos_section todos={@incoming_todos} />
-        <% end %>
-
-        <.todo_list todos={@filtered_todos} deleting_todo_id={@deleting_todo_id} compact_view={Map.get(assigns, :compact_todo_view, true)} />
-
-        <!-- Edit Todo Modal -->
-        <%= if Map.get(assigns, :editing_todo) do %>
-          <.modal id="edit-todo-modal" title="Edit Todo" size="large" z_index="high">
-            <.edit_todo_form todo={@editing_todo} />
-          </.modal>
-        <% end %>
-
-        <!-- Add Todo Modal -->
-        <%= if Map.get(assigns, :adding_todo, false) do %>
-          <.modal id="add-todo-modal" title="Add New Todo" size="large" z_index="high">
-            <.add_todo_form />
-          </.modal>
-        <% end %>
-
-        <!-- View Todo Modal -->
-        <%= if Map.get(assigns, :viewing_todo) do %>
-          <.modal id="view-todo-modal" title="Todo Details" size="large">
-            <.todo_view
-              todo={@viewing_todo}
-              comments={Map.get(assigns, :todo_comments, [])}
-              show_todo_chat={Map.get(assigns, :show_todo_chat, false)}
-              chat_todo_id={Map.get(assigns, :chat_todo_id)}
-              todo_chat_messages={Map.get(assigns, :todo_chat_messages, [])}
-              todo_conversations={Map.get(assigns, :todo_conversations, [])}
-              current_todo_conversation={Map.get(assigns, :current_todo_conversation)}
-              checkbox_update_trigger={Map.get(assigns, :checkbox_update_trigger, 0)}
-            />
-          </.modal>
-        <% end %>
-      </div>
-    </div>
-    """
-  end
-
-  def incoming_todos_section(assigns) do
-    ~H"""
-    <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-lg font-semibold text-blue-800">
-          <svg class="inline w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-          New Todos Found (<%= length(@todos) %>)
-        </h3>
-        <div class="flex space-x-2">
-          <button
-            phx-click="dismiss_incoming_todos"
-            class="text-xs px-3 py-1 text-red-600 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
-            onclick="return confirm('Are you sure you want to delete all these todos?')"
-          >
-            Delete All
-          </button>
-          <button
-            phx-click="accept_incoming_todos"
-            class="text-xs px-3 py-1 text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            ✓ Accept All
-          </button>
-        </div>
-      </div>
-
-      <div class="space-y-2">
-        <%= for todo <- @todos do %>
-          <.incoming_todo_item todo={todo} />
-        <% end %>
-      </div>
-
-      <p class="text-xs text-blue-600 mt-3">
-        These todos were extracted from your journal entry. Review and accept or delete them.
-      </p>
-    </div>
-    """
-  end
-
-  def incoming_todo_item(assigns) do
-    ~H"""
-    <div class="flex items-start gap-3 p-3 bg-white border border-blue-200 rounded-lg">
-      <div class="flex-1">
-        <div class="flex justify-between items-start">
-          <h4 class="font-medium text-gray-800">
-            <%= @todo.title %>
-          </h4>
-          <button
-            phx-click="delete_incoming_todo"
-            phx-value-id={@todo.id}
-            class="text-red-500 hover:text-red-700 transition-colors"
-            onclick="return confirm('Delete this todo?')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        <%= if @todo.description && String.trim(@todo.description) != "" do %>
-          <div class="text-sm text-gray-600 mt-1">
-            <div id={"todo-list-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
-              <%= raw(render_interactive_description(@todo.description, @todo.id, false)) %>
-            </div>
-          </div>
-        <% end %>
-        <div class="flex items-center gap-2 mt-2">
-          <%= if @todo.priority do %>
-            <span class={"text-xs px-2 py-1 rounded-full #{priority_class(@todo.priority)}"}>
-              <%= @todo.priority %>
-            </span>
-          <% end %>
-          <%= if @todo.comment_count && @todo.comment_count > 0 do %>
-            <span class="text-xs text-gray-500 flex items-center gap-1">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-              </svg>
-              <%= @todo.comment_count %>
-            </span>
-          <% end %>
-          <%= if @todo.tags && length(@todo.tags) > 0 do %>
-            <div class="flex flex-wrap gap-1">
-              <%= for tag <- @todo.tags do %>
-                <button
-                  phx-click="filter_by_tag"
-                  phx-value-tag={tag}
-                  class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors cursor-pointer"
-                  title={"Filter by ##{tag}"}
-                >
-                  #<%= tag %>
-                </button>
-              <% end %>
-            </div>
-          <% end %>
-          <%= if @todo.projects && length(@todo.projects) > 0 do %>
-            <div class="flex flex-wrap gap-1 mt-1">
-              <%= for project <- @todo.projects do %>
-                <button
-                  phx-click="filter_by_project"
-                  phx-value-project={project.name}
-                  class="text-xs px-2 py-1 rounded-full hover:opacity-80 transition-opacity cursor-pointer"
-                  style={"background-color: #{project.color}20; color: #{project.color}; border: 1px solid #{project.color}40;"}
-                  title={"Filter by project: #{project.name}"}
-                >
-                  <%= if project.favicon_url do %>
-                    <img src={project.favicon_url} class="w-3 h-3 inline-block mr-1" alt="" />
-                  <% end %>
-                  <%= project.name %>
-                </button>
-              <% end %>
-            </div>
-          <% end %>
-        </div>
+        <.todo_list
+          todos={@filtered_todos}
+          deleting_todo_id={@deleting_todo_id}
+          compact_view={Map.get(assigns, :compact_todo_view, true)}
+          new_todo_ids={Map.get(assigns, :new_todo_ids, [])}
+        />
       </div>
     </div>
     """
@@ -341,7 +193,12 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     ~H"""
     <div class="space-y-2" phx-hook="TodoDragDropKeyboard" id="todo-drag-drop">
       <%= for todo <- @todos do %>
-        <.todo_item todo={todo} deleting_todo_id={Map.get(assigns, :deleting_todo_id)} compact_view={Map.get(assigns, :compact_view, true)} />
+        <.todo_item
+          todo={todo}
+          deleting_todo_id={Map.get(assigns, :deleting_todo_id)}
+          compact_view={Map.get(assigns, :compact_view, true)}
+          new_todo_ids={Map.get(assigns, :new_todo_ids, [])}
+        />
       <% end %>
     </div>
     """
@@ -350,9 +207,13 @@ defmodule LifeOrgWeb.Components.TodoComponent do
   def todo_item(assigns) do
     is_being_deleted = Map.get(assigns, :deleting_todo_id) == assigns.todo.id
     compact_view = Map.get(assigns, :compact_view, true)
+    new_todo_ids = Map.get(assigns, :new_todo_ids, [])
+    is_new = assigns.todo.id in new_todo_ids
+
     assigns = assigns
       |> assign(:is_being_deleted, is_being_deleted)
       |> assign(:compact_view, compact_view)
+      |> assign(:is_new, is_new)
 
     ~H"""
     <%= if @compact_view do %>
@@ -370,7 +231,11 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 todo-checkbox"
         />
         
-        <div class="flex-1 min-w-0">
+        <div
+          class="flex-1 min-w-0 cursor-pointer"
+          phx-click="view_todo"
+          phx-value-id={@todo.id}
+        >
           <!-- Line 1: Project + Title -->
           <div class="flex items-center gap-1 min-w-0">
             <%= if @todo.projects && length(@todo.projects) > 0 do %>
@@ -394,12 +259,25 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             <% end %>
 
             <span
-              class={"text-sm #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"} cursor-pointer truncate min-w-0"}
-              phx-click="view_todo"
-              phx-value-id={@todo.id}
+              class={"text-sm #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"} truncate min-w-0"}
             >
               <%= @todo.title %>
             </span>
+
+            <%= if @is_new do %>
+              <span class="text-xs font-semibold px-1.5 py-0.5 bg-green-100 text-green-700 rounded uppercase flex-shrink-0">
+                New
+              </span>
+            <% end %>
+
+            <%= if @todo.parent_todo_id do %>
+              <span
+                class="text-xs text-gray-500 flex-shrink-0"
+                title={get_recurrence_description(@todo)}
+              >
+                🔄
+              </span>
+            <% end %>
           </div>
 
           <!-- Line 2: Tags + Metadata (only shown if tags or metadata exist) -->
@@ -544,9 +422,16 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           phx-value-id={@todo.id}
         >
           <div class="flex justify-between items-start">
-            <h4 class={"font-medium #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
-              <%= @todo.title %>
-            </h4>
+            <div class="flex items-center gap-2">
+              <h4 class={"font-medium #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
+                <%= @todo.title %>
+              </h4>
+              <%= if @is_new do %>
+                <span class="text-xs font-semibold px-1.5 py-0.5 bg-green-100 text-green-700 rounded uppercase">
+                  New
+                </span>
+              <% end %>
+            </div>
             <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 phx-click="move_todo_to_top"
@@ -769,6 +654,18 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     ~H"""
     <form phx-submit="update_todo" phx-value-id={@todo.id}>
       <div class="space-y-6">
+        <!-- Template Editing Banner -->
+        <%= if @todo.is_template do %>
+          <div class="bg-purple-50 border border-purple-200 rounded-md p-3">
+            <p class="text-sm font-medium text-purple-900 flex items-center gap-2">
+              ⚙️ Editing Recurrence Schedule
+            </p>
+            <p class="text-xs text-purple-700 mt-1">
+              Changes here will affect how future occurrences are generated. Already-created occurrences won't be changed.
+            </p>
+          </div>
+        <% end %>
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Title</label>
           <input
@@ -875,6 +772,48 @@ defmodule LifeOrgWeb.Components.TodoComponent do
             />
           </div>
         </div>
+
+        <!-- Recurrence Pattern Component (for new recurring todos or editing templates) -->
+        <%= if !@todo.parent_todo_id do %>
+          <.live_component
+            module={LifeOrgWeb.Components.RecurrencePatternComponent}
+            id="edit-recurrence-pattern"
+            todo={@todo}
+          />
+        <% end %>
+
+        <!-- Edit Propagation Option (for recurring todo occurrences) -->
+        <%= if @todo.parent_todo_id do %>
+          <div class="border-t border-gray-200 pt-4 mt-4">
+            <div class="bg-blue-50 border border-blue-200 rounded-md p-3 mb-3">
+              <p class="text-sm text-blue-800">
+                This is a recurring todo. Changes can be applied to this occurrence only, or to all future occurrences.
+              </p>
+            </div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center">
+                <input
+                  type="checkbox"
+                  id="propagate_to_future"
+                  name="todo[propagate_to_future]"
+                  value="true"
+                  class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label for="propagate_to_future" class="ml-2 block text-sm font-medium text-gray-700">
+                  Apply changes to all future occurrences
+                </label>
+              </div>
+              <button
+                type="button"
+                phx-click="edit_recurrence_schedule"
+                phx-value-id={@todo.parent_todo_id}
+                class="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                ⚙️ Edit Recurrence Schedule
+              </button>
+            </div>
+          </div>
+        <% end %>
 
         <div class="flex justify-end gap-3">
           <button
@@ -1024,6 +963,12 @@ defmodule LifeOrgWeb.Components.TodoComponent do
           </div>
         </div>
 
+        <!-- Recurrence Pattern Component -->
+        <.live_component
+          module={LifeOrgWeb.Components.RecurrencePatternComponent}
+          id="add-recurrence-pattern"
+        />
+
         <div class="flex justify-end gap-3">
           <button
             type="button"
@@ -1088,11 +1033,11 @@ defmodule LifeOrgWeb.Components.TodoComponent do
     assigns = assign(assigns, :show_chat, show_chat)
 
     ~H"""
-    <div class={"flex gap-6 #{if @show_chat, do: "h-[600px]", else: ""}"}>
+    <div class={"flex flex-col lg:flex-row gap-3 sm:gap-6 #{if @show_chat, do: "lg:h-[600px]", else: ""}"}>
       <!-- Left Column: Todo Details -->
-      <div class={"#{if @show_chat, do: "w-1/2", else: "w-full"} #{if @show_chat, do: "overflow-y-auto pr-3", else: "space-y-6"}"}>
+      <div class={"#{if @show_chat, do: "lg:w-1/2", else: "w-full"} #{if @show_chat, do: "lg:overflow-y-auto lg:pr-3", else: "space-y-3 sm:space-y-6"}"}>
         <!-- Todo Header -->
-        <div class="flex items-start justify-between mb-6">
+        <div class="flex items-start justify-between mb-3 sm:mb-6">
           <div class="flex-1">
             <h2 class={"text-2xl font-bold #{if @todo.completed, do: "line-through text-gray-500", else: "text-gray-800"}"}>
               <%= @todo.title %>
@@ -1153,7 +1098,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <!-- Journal Entry Reference -->
         <%= if @todo.journal_entry do %>
-          <div class="mb-6">
+          <div class="mb-3 sm:mb-6">
             <div class="relative inline-block">
               <button
                 onclick={"
@@ -1225,7 +1170,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <!-- Tags -->
         <%= if @todo.tags && length(@todo.tags) > 0 do %>
-          <div class="flex flex-wrap gap-2 mb-6">
+          <div class="flex flex-wrap gap-2 mb-3 sm:mb-6">
             <%= for tag <- @todo.tags do %>
               <button
                 phx-click="filter_by_tag"
@@ -1241,7 +1186,7 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <!-- Projects -->
         <%= if @todo.projects && length(@todo.projects) > 0 do %>
-          <div class="flex flex-wrap gap-2 mb-6">
+          <div class="flex flex-wrap gap-2 mb-3 sm:mb-6">
             <%= for project <- @todo.projects do %>
               <button
                 phx-click="filter_by_project"
@@ -1261,8 +1206,8 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
         <!-- Description -->
         <%= if @todo.description && String.trim(@todo.description) != "" do %>
-          <div id={"todo-view-description-#{@todo.id}"} class="bg-gray-50 rounded-lg p-4 mb-6" phx-hook="InteractiveCheckboxes">
-            <h3 class="text-lg font-semibold text-gray-800 mb-3">Description</h3>
+          <div id={"todo-view-description-#{@todo.id}"} class="bg-gray-50 rounded-lg p-3 sm:p-4 mb-3 sm:mb-6" phx-hook="InteractiveCheckboxes">
+            <h3 class="text-base sm:text-lg font-semibold text-gray-800 mb-2 sm:mb-3">Description</h3>
             <div class="prose prose-sm prose-gray max-w-none">
               <div id={"todo-description-preview-#{@todo.id}"} class="link-preview-container" phx-hook="LinkPreviewLoader" data-content={Phoenix.HTML.html_escape(@todo.description)}>
                 <%= raw(render_interactive_description(@todo.description, @todo.id)) %>
@@ -1274,9 +1219,9 @@ defmodule LifeOrgWeb.Components.TodoComponent do
         <% end %>
 
         <!-- Comments Section -->
-        <div class="border-t pt-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-800">Comments</h3>
+        <div class="border-t pt-3 sm:pt-6">
+          <div class="flex items-center justify-between mb-3 sm:mb-4">
+            <h3 class="text-base sm:text-lg font-semibold text-gray-800">Comments</h3>
             <button
               onclick={"document.getElementById('comment-form-#{@todo.id}').classList.remove('hidden')"}
               class="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
@@ -1327,10 +1272,10 @@ defmodule LifeOrgWeb.Components.TodoComponent do
 
       <!-- Right Column: Chat Interface -->
       <%= if @show_chat do %>
-        <div class="w-1/2 border-l pl-6">
+        <div class="lg:w-1/2 border-t lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-6">
           <div class="flex flex-col h-full">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-semibold text-gray-800">Todo Chat</h3>
+            <div class="flex items-center justify-between mb-3 sm:mb-4">
+              <h3 class="text-base sm:text-lg font-semibold text-gray-800">Todo Chat</h3>
               <div class="flex items-center gap-2">
                 <%= if length(Map.get(assigns, :todo_conversations, [])) > 1 do %>
                   <button
@@ -1366,8 +1311,8 @@ defmodule LifeOrgWeb.Components.TodoComponent do
               </div>
             <% end %>
 
-            <div class="flex-1 bg-gray-50 rounded-lg p-4 overflow-y-auto mb-4">
-              <div class="space-y-3">
+            <div class="flex-1 bg-gray-50 rounded-lg p-3 sm:p-4 overflow-y-auto mb-3 sm:mb-4 min-h-[200px] max-h-[400px] lg:max-h-none">
+              <div class="space-y-2 sm:space-y-3">
                 <%= if length(Map.get(assigns, :todo_chat_messages, [])) == 0 do %>
                   <p class="text-gray-500 text-center py-8 text-sm">
                     Start a conversation about "<%= @todo.title %>"
@@ -1550,5 +1495,19 @@ defmodule LifeOrgWeb.Components.TodoComponent do
       end)
 
     Enum.join(processed_lines, "\n")
+  end
+
+  defp get_recurrence_description(todo) do
+    if todo.parent_todo_id do
+      # Get the template to fetch the pattern description
+      template = LifeOrg.WorkspaceService.get_template_for_occurrence(todo)
+      if template do
+        LifeOrg.RecurrenceService.pattern_description(template)
+      else
+        "Recurring"
+      end
+    else
+      ""
+    end
   end
 end

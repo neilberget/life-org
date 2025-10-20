@@ -62,7 +62,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:workspaces, workspaces)
      |> assign(:journal_entries, journal_entries)
      |> assign(:todos, todos)
-     |> assign(:incoming_todos, [])
+     |> assign(:new_todo_ids, [])
      |> assign(:conversations, conversations)
      |> assign(:current_conversation, nil)
      |> assign(:chat_messages, [])
@@ -228,7 +228,7 @@ defmodule LifeOrgWeb.OrganizerLive do
        |> assign(:current_workspace, workspace)
        |> assign(:journal_entries, journal_entries)
        |> assign(:todos, todos)
-       |> assign(:incoming_todos, [])
+       |> assign(:new_todo_ids, [])
        |> assign(:conversations, conversations)
        |> assign(:current_conversation, nil)
        |> assign(:chat_messages, [])
@@ -256,7 +256,7 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:current_workspace, workspace)
      |> assign(:journal_entries, journal_entries)
      |> assign(:todos, todos)
-     |> assign(:incoming_todos, [])
+     |> assign(:new_todo_ids, [])
      |> assign(:conversations, conversations)
      |> assign(:current_conversation, nil)
      |> assign(:chat_messages, [])
@@ -271,17 +271,38 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("toggle_todo", %{"id" => id}, socket) do
     todo = Repo.get!(Todo, id)
-    
+
     # If marking as completed, also turn off current status
     updates = if !todo.completed do
       %{completed: true, current: false}
     else
       %{completed: false}
     end
-    
+
     {:ok, updated_todo} = WorkspaceService.update_todo(todo, updates)
 
-    todos = update_todo_in_list(socket.assigns.todos, updated_todo)
+    # Handle recurring todo generation if this was marked complete and is a recurring occurrence
+    if updated_todo.completed and updated_todo.parent_todo_id do
+      Task.start(fn ->
+        require Logger
+        case LifeOrg.RecurrenceService.handle_occurrence_completion(updated_todo) do
+          {:ok, :recurrence_ended} ->
+            Logger.info("Recurrence ended for todo: #{updated_todo.title}")
+          {:ok, _new_occurrence} ->
+            Logger.info("Generated next occurrence for recurring todo: #{updated_todo.title}")
+          {:error, reason} ->
+            Logger.error("Failed to generate next occurrence: #{inspect(reason)}")
+        end
+      end)
+    end
+
+    # Reload todos to include any newly generated occurrences
+    todos = if updated_todo.completed and updated_todo.parent_todo_id do
+      WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+    else
+      update_todo_in_list(socket.assigns.todos, updated_todo)
+    end
+
     {:noreply, assign(socket, :todos, todos)}
   end
 
@@ -482,12 +503,31 @@ defmodule LifeOrgWeb.OrganizerLive do
       |> Map.update("due_time", nil, fn time ->
         if String.trim(time || "") == "", do: nil, else: time
       end)
+      |> Map.update("recurrence_start_date", nil, fn date ->
+        if String.trim(date || "") == "", do: nil, else: date
+      end)
+      |> Map.update("recurrence_end_date", nil, fn date ->
+        if String.trim(date || "") == "", do: nil, else: date
+      end)
       |> process_tags_input()
       |> process_projects_input()
+      |> process_recurrence_data()
 
     case WorkspaceService.create_todo(cleaned_params, socket.assigns.current_workspace.id) do
       {:ok, todo} ->
-        todos = [todo | socket.assigns.todos] |> sort_todos()
+        # If this is a recurring template, generate the first occurrence
+        todos = if todo.is_template do
+          case LifeOrg.RecurrenceService.generate_next_occurrence(todo) do
+            {:ok, _first_occurrence} ->
+              # Reload all todos to include the first occurrence
+              WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+            _ ->
+              # If generation fails, just show the list without the template (it's hidden)
+              socket.assigns.todos
+          end
+        else
+          [todo | socket.assigns.todos] |> sort_todos()
+        end
 
         {:noreply,
          socket
@@ -496,7 +536,9 @@ defmodule LifeOrgWeb.OrganizerLive do
          |> push_event("hide_modal", %{id: "add-todo-modal"})
          |> put_flash(:info, "Todo created successfully")}
 
-      {:error, %Ecto.Changeset{} = _changeset} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
+        require Logger
+        Logger.error("Failed to create todo: #{inspect(changeset.errors)}")
         {:noreply, put_flash(socket, :error, "Error creating todo")}
     end
   end
@@ -509,6 +551,21 @@ defmodule LifeOrgWeb.OrganizerLive do
      socket
      |> assign(:editing_todo, todo)
      |> push_event("show_modal", %{id: "edit-todo-modal"})}
+  end
+
+  @impl true
+  def handle_event("edit_recurrence_schedule", %{"id" => template_id}, socket) do
+    # Get the template to edit the recurrence schedule
+    template = WorkspaceService.get_recurring_template(String.to_integer(template_id))
+
+    if template do
+      {:noreply,
+       socket
+       |> assign(:editing_todo, template)
+       |> push_event("show_modal", %{id: "edit-todo-modal"})}
+    else
+      {:noreply, put_flash(socket, :error, "Could not find recurrence template")}
+    end
   end
 
   @impl true
@@ -527,17 +584,54 @@ defmodule LifeOrgWeb.OrganizerLive do
       |> Map.update("due_time", nil, fn time ->
         if String.trim(time || "") == "", do: nil, else: time
       end)
+      |> Map.update("recurrence_start_date", nil, fn date ->
+        if String.trim(date || "") == "", do: nil, else: date
+      end)
+      |> Map.update("recurrence_end_date", nil, fn date ->
+        if String.trim(date || "") == "", do: nil, else: date
+      end)
       |> process_tags_input()
       |> process_projects_input()
+      |> process_recurrence_data()
 
-    case WorkspaceService.update_todo(todo, cleaned_params) do
+    # Check if this is a recurring todo occurrence and if user wants to propagate changes
+    propagate_to_future = Map.get(params, "propagate_to_future", "false") == "true"
+
+    result = if todo.parent_todo_id && propagate_to_future do
+      # Get the template and update it (which will propagate to future occurrences)
+      template = WorkspaceService.get_template_for_occurrence(todo)
+      if template do
+        # Update the occurrence first
+        WorkspaceService.update_todo(todo, cleaned_params)
+        # Then update template and propagate
+        LifeOrg.RecurrenceService.update_template_and_propagate(template, cleaned_params, true)
+      else
+        WorkspaceService.update_todo(todo, cleaned_params)
+      end
+    else
+      WorkspaceService.update_todo(todo, cleaned_params)
+    end
+
+    case result do
       {:ok, updated_todo} ->
-        todos =
+        # If this todo was just converted to a recurring template, generate the first occurrence
+        was_converted_to_template = !todo.is_template && updated_todo.is_template
+
+        # If we propagated changes or converted to template, reload all todos
+        todos = if propagate_to_future || was_converted_to_template do
+          # Generate first occurrence if needed
+          if was_converted_to_template do
+            LifeOrg.RecurrenceService.generate_next_occurrence(updated_todo)
+          end
+
+          WorkspaceService.list_todos(socket.assigns.current_workspace.id) |> sort_todos()
+        else
           socket.assigns.todos
           |> Enum.map(fn t ->
             if t.id == updated_todo.id, do: updated_todo, else: t
           end)
           |> sort_todos()
+        end
 
         # If we were viewing this todo before editing, return to view modal
         should_return_to_view =
@@ -574,7 +668,9 @@ defmodule LifeOrgWeb.OrganizerLive do
 
         {:noreply, socket}
 
-      {:error, %Ecto.Changeset{} = _changeset} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
+        require Logger
+        Logger.error("Failed to update todo: #{inspect(changeset.errors)}")
         {:noreply, put_flash(socket, :error, "Error updating todo")}
     end
   end
@@ -1153,40 +1249,6 @@ defmodule LifeOrgWeb.OrganizerLive do
   @impl true
   def handle_event("switch_mobile_tab", %{"tab" => tab}, socket) do
     {:noreply, assign(socket, :mobile_tab, tab)}
-  end
-
-  @impl true
-  def handle_event("accept_incoming_todos", _params, socket) do
-    # Move all incoming todos to regular todos list
-    new_todos = socket.assigns.todos ++ socket.assigns.incoming_todos
-
-    {:noreply,
-     socket
-     |> assign(:todos, sort_todos(new_todos))
-     |> assign(:incoming_todos, [])}
-  end
-
-  @impl true
-  def handle_event("dismiss_incoming_todos", _params, socket) do
-    # Delete all incoming todos
-    Enum.each(socket.assigns.incoming_todos, fn todo ->
-      WorkspaceService.delete_todo(todo)
-    end)
-
-    {:noreply, assign(socket, :incoming_todos, [])}
-  end
-
-  @impl true
-  def handle_event("delete_incoming_todo", %{"id" => id}, socket) do
-    todo = Enum.find(socket.assigns.incoming_todos, &(&1.id == String.to_integer(id)))
-
-    if todo do
-      WorkspaceService.delete_todo(todo)
-      remaining_todos = Enum.reject(socket.assigns.incoming_todos, &(&1.id == todo.id))
-      {:noreply, assign(socket, :incoming_todos, remaining_todos)}
-    else
-      {:noreply, socket}
-    end
   end
 
   @impl true
@@ -1937,15 +1999,33 @@ defmodule LifeOrgWeb.OrganizerLive do
           end)
         end
         
+        # Extract IDs of newly created todos and position them at top
+        new_todo_ids = Enum.map(new_todos, & &1.id)
+
+        # Update positions to put new todos at top
+        final_todos = if length(new_todo_ids) > 0 do
+          # Get minimum position from existing todos
+          min_position = Enum.min(Enum.map(updated_todos, & &1.position || 0), fn -> 0 end)
+
+          # Update each new todo to have a position at the top
+          Enum.with_index(new_todo_ids)
+          |> Enum.each(fn {todo_id, index} ->
+            todo = Repo.get!(Todo, todo_id)
+            # Space them out by 1000, starting from min_position - 1000
+            WorkspaceService.update_todo(todo, %{position: min_position - 1000 * (index + 1)})
+          end)
+
+          # Reload todos after position updates
+          WorkspaceService.list_todos(workspace_id) |> sort_todos()
+        else
+          updated_todos
+        end
+
         {:noreply,
          socket
-         |> assign(:todos, updated_todos)
+         |> assign(:todos, final_todos)
+         |> assign(:new_todo_ids, new_todo_ids)
          |> assign(:processing_journal_todos, false)
-         |> (fn s ->
-              if length(new_todos) > 0,
-                do: assign(s, :incoming_todos, sort_todos(new_todos)),
-                else: s
-            end).()
          |> put_flash(:info, flash_message)}
       else
         # Original logic for when actions are returned
@@ -1989,15 +2069,33 @@ defmodule LifeOrgWeb.OrganizerLive do
               "Found #{new_count} new todo(s) and updated #{updated_count} existing todo(s)!"
           end
 
+        # Extract IDs of newly created todos and position them at top
+        new_todo_ids = Enum.map(created_todos, & &1.id)
+
+        # Update positions to put new todos at top
+        final_todos = if length(new_todo_ids) > 0 do
+          # Get minimum position from existing todos
+          min_position = Enum.min(Enum.map(updated_todos, & &1.position || 0), fn -> 0 end)
+
+          # Update each new todo to have a position at the top
+          Enum.with_index(new_todo_ids)
+          |> Enum.each(fn {todo_id, index} ->
+            todo = Repo.get!(Todo, todo_id)
+            # Space them out by 1000, starting from min_position - 1000
+            WorkspaceService.update_todo(todo, %{position: min_position - 1000 * (index + 1)})
+          end)
+
+          # Reload todos after position updates
+          WorkspaceService.list_todos(workspace_id) |> sort_todos()
+        else
+          updated_todos
+        end
+
         socket =
           socket
-          |> assign(:todos, sort_todos(updated_todos))
+          |> assign(:todos, final_todos)
+          |> assign(:new_todo_ids, new_todo_ids)
           |> assign(:processing_journal_todos, false)
-          |> (fn s ->
-                if length(created_todos) > 0,
-                  do: assign(s, :incoming_todos, sort_todos(created_todos)),
-                  else: s
-              end).()
 
         # Create conversation for journal entry if any todos were created or updated
         if length(todo_actions) > 0 do
@@ -2167,6 +2265,34 @@ defmodule LifeOrgWeb.OrganizerLive do
     |> Map.put("projects", all_projects)
     |> Map.delete("existing_projects")
     |> Map.delete("new_projects")
+  end
+
+  defp process_recurrence_data(params) do
+    # Check if this is a recurring todo
+    is_recurring = Map.get(params, "is_recurring") == "true"
+
+    if is_recurring do
+      # Parse the recurrence pattern JSON
+      pattern = case Map.get(params, "recurrence_pattern") do
+        pattern_str when is_binary(pattern_str) ->
+          case Jason.decode(pattern_str) do
+            {:ok, pattern} -> pattern
+            _ -> nil
+          end
+        pattern when is_map(pattern) -> pattern
+        _ -> nil
+      end
+
+      params
+      |> Map.put("is_recurring", true)
+      |> Map.put("is_template", true)  # Recurring todos are templates
+      |> Map.put("recurrence_pattern", pattern)
+      # recurrence_type, recurrence_start_date, and recurrence_end_date are already in params
+    else
+      params
+      |> Map.put("is_recurring", false)
+      |> Map.put("is_template", false)
+    end
   end
 
   defp filter_todos_by_tag(todos, nil), do: todos

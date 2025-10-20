@@ -21,33 +21,33 @@ defmodule LifeOrgWeb.Components.ModalComponent do
     ~H"""
     <div
       id={@id}
-      class={"fixed inset-0 #{@z_index_class} overflow-y-auto"}
-      style="display: none;"
+      class={"fixed inset-0 #{@z_index_class}"}
+      style="display: none; overflow-y: auto; -webkit-overflow-scrolling: touch;"
     >
       <!-- Backdrop -->
-      <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
-      
-      <!-- Modal -->
-      <div class="flex min-h-full items-center justify-center p-4">
-        <div class={"relative bg-white rounded-lg shadow-xl #{@size_class} w-full"}>
+      <div class="fixed inset-0 bg-black opacity-60"></div>
+
+      <!-- Modal Container -->
+      <div class="relative z-10 min-h-full flex items-start sm:items-center justify-center p-0 sm:p-4">
+        <div class={"relative bg-white rounded-none sm:rounded-lg shadow-2xl #{@size_class} w-full min-h-screen sm:min-h-0 sm:max-h-[95vh] overflow-y-auto"}>
           <!-- Header -->
-          <div class="flex items-center justify-between p-6 border-b border-gray-200">
-            <h3 class="text-lg font-semibold text-gray-900">
+          <div class="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-20 shadow-sm">
+            <h3 class="text-base sm:text-lg font-semibold text-gray-900">
               <%= @title %>
             </h3>
             <button
               type="button"
               phx-click={hide_modal(@id)}
-              class="text-gray-400 hover:text-gray-600"
+              class="text-gray-400 hover:text-gray-600 flex-shrink-0 p-2 -mr-2"
             >
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
-          
+
           <!-- Content -->
-          <div class="p-6">
+          <div class="p-3 sm:p-6">
             <%= render_slot(@inner_block) %>
           </div>
         </div>
