@@ -121,8 +121,9 @@ defmodule LifeOrg.AIHandler do
     messages = [%{role: "user", content: journal_content}]
     
     # Use the enhanced tool processing pipeline that can handle multiple rounds of tools
+    # Use Haiku 4.5 for cost-effective structured extraction (67% cheaper than Sonnet)
     result = retry_with_backoff(fn ->
-      AnthropicClient.send_message(messages, system_prompt, tools)
+      AnthropicClient.send_message(messages, system_prompt, tools, model: "claude-haiku-4-5")
     end, max_retries: 2, retry_on: :timeout)
     
     case result do
@@ -193,9 +194,9 @@ defmodule LifeOrg.AIHandler do
     messages_with_assistant = messages ++ [%{role: "assistant", content: content_blocks}]
     messages_with_tools = messages_with_assistant ++ [%{role: "user", content: tool_results}]
 
-    # Get the next response from AI
+    # Get the next response from AI (continue using Haiku 4.5 for extraction)
     case retry_with_backoff(fn ->
-      AnthropicClient.send_message(messages_with_tools, system_prompt, tools)
+      AnthropicClient.send_message(messages_with_tools, system_prompt, tools, model: "claude-haiku-4-5")
     end, max_retries: 2, retry_on: :timeout) do
       {:ok, response} ->
         content_blocks = AnthropicClient.extract_content_from_response(response)

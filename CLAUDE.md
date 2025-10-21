@@ -196,6 +196,13 @@ MySQL connection configured for:
 - Password: root
 - Database: life_org_dev
 
+### Static Assets Configuration
+**IMPORTANT**: When adding new static files to `priv/static/`, they must be registered in `lib/life_org_web.ex` in the `static_paths` function. For example:
+```elixir
+def static_paths, do: ~w(assets fonts images uploads favicon.ico robots.txt manifest.json)
+```
+Without this, the files will exist on disk but won't be served by Phoenix.
+
 ### Commands
 ```bash
 # Install dependencies

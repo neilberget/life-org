@@ -2,14 +2,15 @@ defmodule LifeOrg.AnthropicClient do
   alias LifeOrg.ApiLog
   
   @api_url "https://api.anthropic.com/v1/messages"
-  @model "claude-sonnet-4-0"
-  
-  def send_message(messages, system_prompt \\ nil, tools \\ []) do
+  @default_model "claude-sonnet-4-5"
+
+  def send_message(messages, system_prompt \\ nil, tools \\ [], opts \\ []) do
+    model = Keyword.get(opts, :model, @default_model)
     IO.puts("Getting API key...")
     api_key = get_api_key()
     IO.puts("API key length: #{String.length(api_key)}")
-    
-    body = build_request_body(messages, system_prompt, tools)
+
+    body = build_request_body(messages, system_prompt, tools, model)
     IO.puts("Request body: #{inspect(body)}")
     
     headers = [
@@ -27,7 +28,7 @@ defmodule LifeOrg.AnthropicClient do
         IO.puts("Success response received")
         
         # Log successful request
-        log_api_call(:success, body, response_body, nil, duration_ms)
+        log_api_call(:success, body, response_body, nil, duration_ms, model)
         
         {:ok, response_body}
       {:ok, %{status: status, body: error_body}} ->
@@ -36,7 +37,7 @@ defmodule LifeOrg.AnthropicClient do
         IO.puts("Error response: #{status} - #{inspect(error_body)}")
         
         # Log error response
-        log_api_call(:error, body, error_body, error_msg, duration_ms)
+        log_api_call(:error, body, error_body, error_msg, duration_ms, model)
         
         {:error, error_msg}
       {:error, error} ->
@@ -45,7 +46,7 @@ defmodule LifeOrg.AnthropicClient do
         IO.puts("Network error: #{inspect(error)}")
         
         # Log network error
-        log_api_call(:error, body, nil, error_msg, duration_ms)
+        log_api_call(:error, body, nil, error_msg, duration_ms, model)
         
         {:error, error_msg}
     end
@@ -53,9 +54,9 @@ defmodule LifeOrg.AnthropicClient do
     result
   end
   
-  defp build_request_body(messages, system_prompt, tools) do
+  defp build_request_body(messages, system_prompt, tools, model) do
     base = %{
-      "model" => @model,
+      "model" => model,
       "messages" => format_messages(messages),
       "max_tokens" => 8192
     }
@@ -139,21 +140,21 @@ defmodule LifeOrg.AnthropicClient do
     }
   end
   
-  defp log_api_call(status, request_data, response_data, error_message, duration_ms) do
+  defp log_api_call(status, request_data, response_data, error_message, duration_ms, model) do
     # Extract token usage from response if available
     usage = if response_data && Map.has_key?(response_data, "usage") do
       response_data["usage"]
     else
       %{}
     end
-    
+
     input_tokens = Map.get(usage, "input_tokens")
     output_tokens = Map.get(usage, "output_tokens")
     total_tokens = if input_tokens && output_tokens, do: input_tokens + output_tokens, else: nil
-    
+
     log_attrs = %{
       service: "anthropic",
-      model: @model,
+      model: model,
       request_data: request_data,
       response_data: response_data,
       error_message: error_message,
