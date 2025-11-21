@@ -1,7 +1,7 @@
 defmodule LifeOrg.Workspace do
   use Ecto.Schema
   import Ecto.Changeset
-  alias LifeOrg.{JournalEntry, Todo, Conversation, UserIntegration, ImportRun}
+  alias LifeOrg.{JournalEntry, Todo, Conversation, UserIntegration, ImportRun, WorkspaceUser, WorkspaceInvitation}
   alias LifeOrg.Accounts.User
 
   schema "workspaces" do
@@ -16,6 +16,9 @@ defmodule LifeOrg.Workspace do
     has_many :conversations, Conversation
     has_many :user_integrations, UserIntegration
     has_many :import_runs, ImportRun
+    has_many :workspace_users, WorkspaceUser
+    has_many :members, through: [:workspace_users, :user]
+    has_many :invitations, WorkspaceInvitation
 
     timestamps(type: :utc_datetime)
   end
@@ -28,7 +31,6 @@ defmodule LifeOrg.Workspace do
     |> validate_length(:name, min: 1, max: 100)
     |> validate_length(:description, max: 500)
     |> validate_format(:color, ~r/^#[0-9A-Fa-f]{6}$/, message: "must be a valid hex color")
-    |> unique_constraint([:user_id, :name], name: :workspaces_user_id_name_index)
     |> maybe_unset_other_defaults()
   end
 

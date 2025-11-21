@@ -1,7 +1,7 @@
 defmodule LifeOrg.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
-  alias LifeOrg.Workspace
+  alias LifeOrg.{Workspace, WorkspaceUser}
   alias Bcrypt
 
   schema "users" do
@@ -13,6 +13,8 @@ defmodule LifeOrg.Accounts.User do
     field :timezone, :string, default: "America/Chicago"
 
     has_many :workspaces, Workspace
+    has_many :workspace_users, WorkspaceUser
+    has_many :shared_workspaces, through: [:workspace_users, :workspace]
 
     timestamps(type: :utc_datetime)
   end

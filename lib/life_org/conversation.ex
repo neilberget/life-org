@@ -2,6 +2,7 @@ defmodule LifeOrg.Conversation do
   use Ecto.Schema
   import Ecto.Changeset
   alias LifeOrg.{ChatMessage, Workspace, Todo, JournalEntry}
+  alias LifeOrg.Projects.Project
 
   schema "conversations" do
     field :title, :string
@@ -9,6 +10,7 @@ defmodule LifeOrg.Conversation do
     belongs_to :workspace, Workspace
     belongs_to :todo, Todo
     belongs_to :journal_entry, JournalEntry
+    belongs_to :project, Project
 
     timestamps(type: :utc_datetime)
   end
@@ -16,11 +18,12 @@ defmodule LifeOrg.Conversation do
   @doc false
   def changeset(conversation, attrs) do
     conversation
-    |> cast(attrs, [:title, :workspace_id, :todo_id, :journal_entry_id])
+    |> cast(attrs, [:title, :workspace_id, :todo_id, :journal_entry_id, :project_id])
     |> validate_required([:title, :workspace_id])
     |> foreign_key_constraint(:workspace_id)
     |> foreign_key_constraint(:todo_id)
     |> foreign_key_constraint(:journal_entry_id)
+    |> foreign_key_constraint(:project_id)
   end
   
   def generate_title_from_message(message) do

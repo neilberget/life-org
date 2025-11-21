@@ -75,6 +75,13 @@
           >
             Edit Workspace
           </button>
+
+          <button
+            phx-click="show_workspace_members"
+            class="w-full px-3 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700"
+          >
+            Manage Members
+          </button>
         </div>
       <% end %>
 
@@ -143,6 +150,12 @@
               class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
             >
               Edit
+            </button>
+            <button
+              phx-click="show_workspace_members"
+              class="px-3 py-1 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              Members
             </button>
           </div>
         </div>
@@ -415,8 +428,8 @@
         </div>
       <% else %>
         <!-- Normal Two-Column Layout -->
-        <!-- Desktop: Side by side -->
-        <div class="hidden md:contents">
+        <!-- Desktop: Journal left, Todos/Ideas split right -->
+        <div class="hidden md:flex w-full h-full">
           <JournalComponent.journal_column
             entries={@journal_entries}
             editing_entry={@editing_entry}
@@ -428,26 +441,39 @@
             current_journal_conversation={@current_journal_conversation}
             user_timezone={@user_timezone}
           />
-          <TodoComponent.todo_column
-            todos={@todos |> filter_todos_by_tag(@tag_filter) |> filter_todos_by_project(@project_filter)}
-            all_todos={@todos}
-            tag_filter={@tag_filter}
-            project_filter={@project_filter}
-            new_todo_ids={@new_todo_ids}
-            editing_todo={@editing_todo}
-            adding_todo={@adding_todo}
-            user_timezone={@user_timezone}
-            viewing_todo={@viewing_todo}
-            todo_comments={@todo_comments}
-            show_comment_form={@show_comment_form}
-            comment_todo_id={@comment_todo_id}
-            show_todo_chat={@show_todo_chat}
-            chat_todo_id={@chat_todo_id}
-            todo_chat_messages={@todo_chat_messages}
-            deleting_todo_id={@deleting_todo_id}
-            show_completed={@show_completed}
-            compact_todo_view={@compact_todo_view}
-          />
+          <!-- Right column: Todos top, Ideas bottom -->
+          <div class="w-1/2 flex flex-col h-full">
+            <div class="h-1/2 overflow-y-auto border-b border-gray-200">
+              <TodoComponent.todo_column
+                todos={@todos |> filter_todos_by_tag(@tag_filter) |> filter_todos_by_project(@project_filter)}
+                all_todos={@todos}
+                tag_filter={@tag_filter}
+                project_filter={@project_filter}
+                new_todo_ids={@new_todo_ids}
+                editing_todo={@editing_todo}
+                adding_todo={@adding_todo}
+                user_timezone={@user_timezone}
+                viewing_todo={@viewing_todo}
+                todo_comments={@todo_comments}
+                show_comment_form={@show_comment_form}
+                comment_todo_id={@comment_todo_id}
+                show_todo_chat={@show_todo_chat}
+                chat_todo_id={@chat_todo_id}
+                todo_chat_messages={@todo_chat_messages}
+                deleting_todo_id={@deleting_todo_id}
+                show_completed={@show_completed}
+                compact_todo_view={@compact_todo_view}
+              />
+            </div>
+            <IdeaComponent.idea_section
+              ideas={@ideas}
+              incoming_ideas={@incoming_ideas}
+              incoming_ideas_dismissed={@incoming_ideas_dismissed}
+              category_filter={@category_filter}
+              timeframe_filter={@timeframe_filter}
+              deleting_idea_id={@deleting_idea_id}
+            />
+          </div>
         </div>
 
         <!-- Mobile: Tabbed view -->
@@ -492,6 +518,17 @@
                     compact_todo_view={@compact_todo_view}
                   />
                 </div>
+              <% "ideas" -> %>
+                <div class="h-full">
+                  <IdeaComponent.idea_section
+                    ideas={@ideas}
+                    incoming_ideas={@incoming_ideas}
+                    incoming_ideas_dismissed={@incoming_ideas_dismissed}
+                    category_filter={@category_filter}
+                    timeframe_filter={@timeframe_filter}
+                    deleting_idea_id={@deleting_idea_id}
+                  />
+                </div>
               <% "chat" -> %>
                 <div class="h-full bg-white">
                   <ChatComponent.ai_sidebar
@@ -524,7 +561,7 @@
               <button
                 phx-click="switch_mobile_tab"
                 phx-value-tab="todos"
-                class={"flex flex-col items-center py-2 px-4 flex-1 #{if Map.get(assigns, :mobile_tab, "journal") == "todos", do: "text-blue-600", else: "text-gray-600"}"}
+                class={"flex flex-col items-center py-2 px-3 flex-1 #{if Map.get(assigns, :mobile_tab, "journal") == "todos", do: "text-blue-600", else: "text-gray-600"}"}
               >
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
@@ -534,8 +571,19 @@
 
               <button
                 phx-click="switch_mobile_tab"
+                phx-value-tab="ideas"
+                class={"flex flex-col items-center py-2 px-3 flex-1 #{if Map.get(assigns, :mobile_tab, "journal") == "ideas", do: "text-purple-600", else: "text-gray-600"}"}
+              >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                </svg>
+                <span class="text-xs mt-1">Ideas</span>
+              </button>
+
+              <button
+                phx-click="switch_mobile_tab"
                 phx-value-tab="chat"
-                class={"flex flex-col items-center py-2 px-4 flex-1 #{if Map.get(assigns, :mobile_tab, "journal") == "chat", do: "text-blue-600", else: "text-gray-600"}"}
+                class={"flex flex-col items-center py-2 px-3 flex-1 #{if Map.get(assigns, :mobile_tab, "journal") == "chat", do: "text-blue-600", else: "text-gray-600"}"}
               >
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
@@ -620,6 +668,21 @@
       user_timezone={@user_timezone}
     />
   </LifeOrgWeb.Components.ModalComponent.modal>
+<% end %>
+
+<!-- Add Idea Modal -->
+<%= if Map.get(assigns, :adding_idea, false) do %>
+  <IdeaComponent.add_idea_form />
+<% end %>
+
+<!-- Edit Idea Modal -->
+<%= if Map.get(assigns, :editing_idea) do %>
+  <IdeaComponent.edit_idea_form idea={@editing_idea} />
+<% end %>
+
+<!-- View Idea Modal -->
+<%= if Map.get(assigns, :viewing_idea) do %>
+  <IdeaComponent.idea_view idea={@viewing_idea} />
 <% end %>
 
 <!-- Edit Workspace Modal -->
@@ -872,5 +935,143 @@
         </button>
       </div>
     </form>
+  </LifeOrgWeb.Components.ModalComponent.modal>
+<% end %>
+
+<!-- Pending Invitations Banner -->
+<%= if length(@pending_invitations) > 0 do %>
+  <div class="fixed top-4 right-4 z-50 max-w-md">
+    <%= for invitation <- @pending_invitations do %>
+      <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-2 shadow-lg">
+        <div class="flex items-start justify-between">
+          <div class="flex-1">
+            <p class="text-sm font-medium text-purple-900">Workspace Invitation</p>
+            <p class="text-sm text-purple-700 mt-1">
+              <%= invitation.invited_by.email %> invited you to join <strong><%= invitation.workspace.name %></strong>
+            </p>
+          </div>
+        </div>
+        <div class="flex space-x-2 mt-3">
+          <button
+            phx-click="accept_invitation"
+            phx-value-id={invitation.id}
+            class="flex-1 px-3 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+          >
+            Accept
+          </button>
+          <button
+            phx-click="decline_invitation"
+            phx-value-id={invitation.id}
+            class="flex-1 px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300"
+          >
+            Decline
+          </button>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% end %>
+
+<!-- Workspace Members Modal -->
+<%= if @show_workspace_members do %>
+  <LifeOrgWeb.Components.ModalComponent.modal title="Workspace Members" on_close="close_workspace_members" size="large">
+    <div class="space-y-6">
+      <!-- Invite Section (Owner Only) -->
+      <%= if @is_workspace_owner do %>
+        <div class="bg-gray-50 p-4 rounded-lg">
+          <h3 class="text-sm font-semibold text-gray-900 mb-3">Invite Member</h3>
+          <form phx-submit="invite_member" class="flex space-x-2">
+            <input
+              type="email"
+              name="email"
+              value={@invite_email}
+              placeholder="Enter email address"
+              class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              required
+            />
+            <button
+              type="submit"
+              class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              Send Invite
+            </button>
+          </form>
+        </div>
+      <% end %>
+
+      <!-- Current Members -->
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900 mb-3">Members (<%= length(@workspace_members) %>)</h3>
+        <div class="space-y-2">
+          <%= for member <- @workspace_members do %>
+            <div class="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+              <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                  <span class="text-sm font-medium text-purple-700">
+                    <%= String.first(member.user.email) |> String.upcase() %>
+                  </span>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-gray-900"><%= member.user.email %></p>
+                  <%= if member.is_owner do %>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                      Owner
+                    </span>
+                  <% end %>
+                </div>
+              </div>
+              <%= if @is_workspace_owner && !member.is_owner do %>
+                <button
+                  phx-click="remove_member"
+                  phx-value-user-id={member.user.id}
+                  class="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                >
+                  Remove
+                </button>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+
+      <!-- Pending Invitations (Owner Only) -->
+      <%= if @is_workspace_owner && length(@workspace_invitations) > 0 do %>
+        <div>
+          <h3 class="text-sm font-semibold text-gray-900 mb-3">Pending Invitations</h3>
+          <div class="space-y-2">
+            <%= for invitation <- Enum.filter(@workspace_invitations, fn inv -> inv.status == "pending" end) do %>
+              <div class="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div>
+                  <p class="text-sm font-medium text-gray-900"><%= invitation.email %></p>
+                  <p class="text-xs text-gray-500">
+                    Invited by <%= invitation.invited_by.email %>
+                  </p>
+                </div>
+                <button
+                  phx-click="cancel_invitation"
+                  phx-value-id={invitation.id}
+                  class="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                >
+                  Cancel
+                </button>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <!-- Leave Workspace (Non-Owners) -->
+      <%= if !@is_workspace_owner do %>
+        <div class="pt-4 border-t border-gray-200">
+          <button
+            phx-click="leave_workspace"
+            data-confirm="Are you sure you want to leave this workspace?"
+            class="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            Leave Workspace
+          </button>
+        </div>
+      <% end %>
+    </div>
   </LifeOrgWeb.Components.ModalComponent.modal>
 <% end %>

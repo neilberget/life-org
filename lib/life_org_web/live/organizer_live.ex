@@ -8,6 +8,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     Repo,
     JournalEntry,
     Todo,
+    Idea,
     TodoComment,
     AIHandler,
     ConversationService,
@@ -15,7 +16,7 @@ defmodule LifeOrgWeb.OrganizerLive do
     EmbeddingsService
   }
 
-  alias LifeOrgWeb.Components.{JournalComponent, ChatComponent, TodoComponent}
+  alias LifeOrgWeb.Components.{JournalComponent, ChatComponent, TodoComponent, IdeaComponent}
 
   @impl true
   def mount(params, _session, socket) do
@@ -32,7 +33,9 @@ defmodule LifeOrgWeb.OrganizerLive do
     # Load data for current workspace
     journal_entries = WorkspaceService.list_journal_entries(current_workspace.id)
     todos = WorkspaceService.list_todos(current_workspace.id) |> sort_todos()
+    ideas = WorkspaceService.list_ideas(current_workspace.id)
     conversations = WorkspaceService.list_conversations(current_workspace.id)
+    pending_invitations = WorkspaceService.list_pending_invitations(current_user.email)
 
     # Handle todo route parameter
     {viewing_todo, todo_comments} =
@@ -63,6 +66,15 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:journal_entries, journal_entries)
      |> assign(:todos, todos)
      |> assign(:new_todo_ids, [])
+     |> assign(:ideas, ideas)
+     |> assign(:incoming_ideas, [])
+     |> assign(:incoming_ideas_dismissed, false)
+     |> assign(:editing_idea, nil)
+     |> assign(:viewing_idea, nil)
+     |> assign(:adding_idea, false)
+     |> assign(:category_filter, nil)
+     |> assign(:timeframe_filter, nil)
+     |> assign(:deleting_idea_id, nil)
      |> assign(:conversations, conversations)
      |> assign(:current_conversation, nil)
      |> assign(:chat_messages, [])
@@ -104,6 +116,12 @@ defmodule LifeOrgWeb.OrganizerLive do
      |> assign(:user_timezone, current_user.timezone || "America/Chicago")
      |> assign(:show_mobile_menu, false)
      |> assign(:mobile_tab, "journal")
+     |> assign(:show_workspace_members, false)
+     |> assign(:workspace_members, [])
+     |> assign(:workspace_invitations, [])
+     |> assign(:pending_invitations, pending_invitations)
+     |> assign(:invite_email, "")
+     |> assign(:is_workspace_owner, WorkspaceService.is_workspace_owner?(current_workspace.id, current_user.id))
      |> then(fn socket ->
        # Show todo modal if viewing a specific todo
        if viewing_todo do
@@ -2432,6 +2450,382 @@ defmodule LifeOrgWeb.OrganizerLive do
         |> assign(:show_search_results, false)
         |> assign(:searching, false)
         |> put_flash(:error, "Search failed: #{inspect(reason)}")
+    end
+  end
+
+  # Workspace Members Management
+  def handle_event("show_workspace_members", _params, socket) do
+    workspace_id = socket.assigns.current_workspace.id
+    members = WorkspaceService.list_workspace_members(workspace_id)
+    invitations = WorkspaceService.list_workspace_invitations(workspace_id)
+
+    {:noreply,
+     socket
+     |> assign(:show_workspace_members, true)
+     |> assign(:workspace_members, members)
+     |> assign(:workspace_invitations, invitations)
+     |> assign(:invite_email, "")}
+  end
+
+  def handle_event("close_workspace_members", _params, socket) do
+    {:noreply, assign(socket, :show_workspace_members, false)}
+  end
+
+  def handle_event("invite_member", %{"email" => email}, socket) do
+    workspace_id = socket.assigns.current_workspace.id
+    current_user_id = socket.assigns.current_user.id
+
+    case WorkspaceService.create_invitation(workspace_id, email, current_user_id) do
+      {:ok, _invitation} ->
+        invitations = WorkspaceService.list_workspace_invitations(workspace_id)
+
+        {:noreply,
+         socket
+         |> assign(:workspace_invitations, invitations)
+         |> assign(:invite_email, "")
+         |> put_flash(:info, "Invitation sent to #{email}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  def handle_event("cancel_invitation", %{"id" => invitation_id}, socket) do
+    workspace_id = socket.assigns.current_workspace.id
+    current_user_id = socket.assigns.current_user.id
+
+    case WorkspaceService.cancel_invitation(String.to_integer(invitation_id), workspace_id, current_user_id) do
+      {:ok, _} ->
+        invitations = WorkspaceService.list_workspace_invitations(workspace_id)
+
+        {:noreply,
+         socket
+         |> assign(:workspace_invitations, invitations)
+         |> put_flash(:info, "Invitation cancelled")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  def handle_event("remove_member", %{"user-id" => user_id}, socket) do
+    workspace_id = socket.assigns.current_workspace.id
+    current_user_id = socket.assigns.current_user.id
+
+    case WorkspaceService.remove_member(workspace_id, String.to_integer(user_id), current_user_id) do
+      {:ok, _} ->
+        members = WorkspaceService.list_workspace_members(workspace_id)
+
+        {:noreply,
+         socket
+         |> assign(:workspace_members, members)
+         |> put_flash(:info, "Member removed")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  def handle_event("leave_workspace", _params, socket) do
+    workspace_id = socket.assigns.current_workspace.id
+    current_user_id = socket.assigns.current_user.id
+
+    case WorkspaceService.leave_workspace(workspace_id, current_user_id) do
+      {:ok, _} ->
+        # Reload workspaces and switch to the first available one
+        workspaces = WorkspaceService.list_workspaces(current_user_id)
+        new_workspace = List.first(workspaces) || WorkspaceService.get_default_workspace(current_user_id)
+
+        {:noreply,
+         socket
+         |> assign(:current_workspace, new_workspace)
+         |> assign(:workspaces, workspaces)
+         |> assign(:show_workspace_members, false)
+         |> put_flash(:info, "You have left the workspace")
+         |> push_navigate(to: "/")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  def handle_event("accept_invitation", %{"id" => invitation_id}, socket) do
+    current_user_id = socket.assigns.current_user.id
+
+    case WorkspaceService.accept_invitation(String.to_integer(invitation_id), current_user_id) do
+      {:ok, workspace} ->
+        workspaces = WorkspaceService.list_workspaces(current_user_id)
+        pending_invitations = WorkspaceService.list_pending_invitations(socket.assigns.current_user.email)
+
+        {:noreply,
+         socket
+         |> assign(:workspaces, workspaces)
+         |> assign(:pending_invitations, pending_invitations)
+         |> put_flash(:info, "Joined workspace: #{workspace.name}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  def handle_event("decline_invitation", %{"id" => invitation_id}, socket) do
+    current_user_id = socket.assigns.current_user.id
+
+    case WorkspaceService.decline_invitation(String.to_integer(invitation_id), current_user_id) do
+      {:ok, _} ->
+        pending_invitations = WorkspaceService.list_pending_invitations(socket.assigns.current_user.email)
+
+        {:noreply,
+         socket
+         |> assign(:pending_invitations, pending_invitations)
+         |> put_flash(:info, "Invitation declined")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, reason)}
+    end
+  end
+
+  # Idea event handlers
+  @impl true
+  def handle_event("add_idea", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:adding_idea, true)
+     |> push_event("show_modal", %{id: "add-idea"})}
+  end
+
+  @impl true
+  def handle_event("create_idea", %{"idea" => params}, socket) do
+    cleaned_params =
+      params
+      |> Map.update("description", nil, fn desc ->
+        if String.trim(desc || "") == "", do: nil, else: desc
+      end)
+      |> Map.update("category", nil, fn cat ->
+        if String.trim(cat || "") == "", do: nil, else: cat
+      end)
+      |> Map.update("timeframe", nil, fn tf ->
+        if String.trim(tf || "") == "", do: nil, else: tf
+      end)
+      |> process_tags_input()
+
+    case WorkspaceService.create_idea(cleaned_params, socket.assigns.current_workspace.id) do
+      {:ok, idea} ->
+        {:noreply,
+         socket
+         |> assign(:ideas, [idea | socket.assigns.ideas])
+         |> assign(:adding_idea, false)
+         |> push_event("hide_modal", %{id: "add-idea"})
+         |> put_flash(:info, "Idea created successfully")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        require Logger
+        Logger.error("Failed to create idea: #{inspect(changeset.errors)}")
+        {:noreply, put_flash(socket, :error, "Error creating idea")}
+    end
+  end
+
+  @impl true
+  def handle_event("close_add_idea", _params, socket) do
+    {:noreply, assign(socket, :adding_idea, false)}
+  end
+
+  @impl true
+  def handle_event("edit_idea", %{"id" => id}, socket) do
+    idea = WorkspaceService.get_idea(String.to_integer(id), socket.assigns.current_user.id)
+
+    {:noreply,
+     socket
+     |> assign(:editing_idea, idea)
+     |> push_event("show_modal", %{id: "edit-idea"})}
+  end
+
+  @impl true
+  def handle_event("update_idea", %{"idea" => params}, socket) do
+    idea_id = String.to_integer(params["id"])
+    idea = WorkspaceService.get_idea(idea_id, socket.assigns.current_user.id)
+
+    cleaned_params =
+      params
+      |> Map.update("description", nil, fn desc ->
+        if String.trim(desc || "") == "", do: nil, else: desc
+      end)
+      |> Map.update("category", nil, fn cat ->
+        if String.trim(cat || "") == "", do: nil, else: cat
+      end)
+      |> Map.update("timeframe", nil, fn tf ->
+        if String.trim(tf || "") == "", do: nil, else: tf
+      end)
+      |> process_tags_input()
+
+    case WorkspaceService.update_idea(idea, cleaned_params) do
+      {:ok, updated_idea} ->
+        ideas = Enum.map(socket.assigns.ideas, fn i ->
+          if i.id == updated_idea.id, do: updated_idea, else: i
+        end)
+
+        {:noreply,
+         socket
+         |> assign(:ideas, ideas)
+         |> assign(:editing_idea, nil)
+         |> assign(:viewing_idea, updated_idea)
+         |> push_event("hide_modal", %{id: "edit-idea"})
+         |> push_event("show_modal", %{id: "idea-view"})
+         |> put_flash(:info, "Idea updated successfully")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        require Logger
+        Logger.error("Failed to update idea: #{inspect(changeset.errors)}")
+        {:noreply, put_flash(socket, :error, "Error updating idea")}
+    end
+  end
+
+  @impl true
+  def handle_event("close_edit_idea", _params, socket) do
+    {:noreply, assign(socket, :editing_idea, nil)}
+  end
+
+  @impl true
+  def handle_event("view_idea", %{"id" => id}, socket) do
+    idea = WorkspaceService.get_idea(String.to_integer(id), socket.assigns.current_user.id)
+
+    {:noreply,
+     socket
+     |> assign(:viewing_idea, idea)
+     |> push_event("show_modal", %{id: "idea-view"})}
+  end
+
+  @impl true
+  def handle_event("close_idea_view", _params, socket) do
+    {:noreply, assign(socket, :viewing_idea, nil)}
+  end
+
+  @impl true
+  def handle_event("delete_idea", %{"id" => id}, socket) do
+    {:noreply, assign(socket, :deleting_idea_id, String.to_integer(id))}
+  end
+
+  @impl true
+  def handle_event("confirm_delete_idea", %{"id" => id}, socket) do
+    idea = WorkspaceService.get_idea(String.to_integer(id), socket.assigns.current_user.id)
+    {:ok, _} = WorkspaceService.delete_idea(idea)
+
+    ideas = Enum.reject(socket.assigns.ideas, &(&1.id == String.to_integer(id)))
+
+    {:noreply,
+     socket
+     |> assign(:ideas, ideas)
+     |> assign(:deleting_idea_id, nil)
+     |> put_flash(:info, "Idea deleted successfully")}
+  end
+
+  @impl true
+  def handle_event("cancel_delete_idea", _params, socket) do
+    {:noreply, assign(socket, :deleting_idea_id, nil)}
+  end
+
+  @impl true
+  def handle_event("convert_idea_to_todo", %{"id" => id}, socket) do
+    idea = WorkspaceService.get_idea(String.to_integer(id), socket.assigns.current_user.id)
+
+    case WorkspaceService.convert_idea_to_todo(idea) do
+      {:ok, todo} ->
+        ideas = Enum.map(socket.assigns.ideas, fn i ->
+          if i.id == idea.id do
+            %{i | status: "converted"}
+          else
+            i
+          end
+        end)
+
+        todos = [todo | socket.assigns.todos] |> sort_todos()
+
+        {:noreply,
+         socket
+         |> assign(:ideas, ideas)
+         |> assign(:todos, todos)
+         |> assign(:viewing_idea, nil)
+         |> push_event("hide_modal", %{id: "idea-view"})
+         |> put_flash(:info, "Idea converted to todo successfully")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Error converting idea to todo")}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_category_dropdown", _params, socket) do
+    {:noreply, push_event(socket, "toggle_dropdown", %{id: "category-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("hide_category_dropdown", _params, socket) do
+    {:noreply, push_event(socket, "hide_dropdown", %{id: "category-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("filter_by_category", %{"category" => category}, socket) do
+    {:noreply,
+     socket
+     |> assign(:category_filter, category)
+     |> push_event("hide_dropdown", %{id: "category-dropdown"})}
+  end
+
+  @impl true
+  def handle_event("clear_category_filter", _params, socket) do
+    {:noreply, assign(socket, :category_filter, nil)}
+  end
+
+  @impl true
+  def handle_event("filter_by_timeframe", %{"timeframe" => timeframe}, socket) do
+    {:noreply, assign(socket, :timeframe_filter, timeframe)}
+  end
+
+  @impl true
+  def handle_event("clear_timeframe_filter", _params, socket) do
+    {:noreply, assign(socket, :timeframe_filter, nil)}
+  end
+
+  @impl true
+  def handle_event("accept_incoming_ideas", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:incoming_ideas, [])
+     |> assign(:incoming_ideas_dismissed, false)}
+  end
+
+  @impl true
+  def handle_event("dismiss_incoming_ideas", _params, socket) do
+    # Delete all incoming ideas
+    Enum.each(socket.assigns.incoming_ideas, fn idea ->
+      WorkspaceService.delete_idea(idea)
+    end)
+
+    {:noreply,
+     socket
+     |> assign(:incoming_ideas, [])
+     |> assign(:incoming_ideas_dismissed, true)}
+  end
+
+  @impl true
+  def handle_event("convert_todo_to_idea", %{"id" => id}, socket) do
+    todo = WorkspaceService.get_todo(String.to_integer(id), socket.assigns.current_user.id)
+
+    case WorkspaceService.convert_todo_to_idea(todo) do
+      {:ok, idea} ->
+        todos = Enum.reject(socket.assigns.todos, &(&1.id == String.to_integer(id)))
+        ideas = [idea | socket.assigns.ideas]
+
+        {:noreply,
+         socket
+         |> assign(:todos, todos)
+         |> assign(:ideas, ideas)
+         |> assign(:viewing_todo, nil)
+         |> push_event("hide_modal", %{id: "view-todo-modal"})
+         |> put_flash(:info, "Todo converted to idea successfully")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Error converting todo to idea")}
     end
   end
 end

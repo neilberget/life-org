@@ -1,17 +1,32 @@
 defmodule LifeOrg.WorkspaceService do
   import Ecto.Query, warn: false
-  alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Conversation, Projects, AttachmentService}
+  alias LifeOrg.{Repo, Workspace, JournalEntry, Todo, Idea, Conversation, Projects, AttachmentService}
+  alias LifeOrg.{WorkspaceUser, WorkspaceInvitation, Accounts.User}
 
   def list_workspaces(user_id) do
-    Workspace
-    |> where([w], w.user_id == ^user_id)
-    |> order_by([w], [desc: w.is_default, asc: w.name])
+    # Get both owned workspaces and shared workspaces
+    owned_query = from w in Workspace, where: w.user_id == ^user_id
+
+    shared_query = from w in Workspace,
+      join: wu in WorkspaceUser,
+      on: wu.workspace_id == w.id,
+      where: wu.user_id == ^user_id
+
+    # Union both queries and order by default status and name
+    from(w in subquery(union(owned_query, ^shared_query)),
+      order_by: [desc: w.is_default, asc: w.name]
+    )
     |> Repo.all()
   end
 
   def get_workspace(id, user_id) do
-    Workspace
-    |> where([w], w.id == ^id and w.user_id == ^user_id)
+    # Check if user owns the workspace or is a member
+    from(w in Workspace,
+      left_join: wu in WorkspaceUser,
+      on: wu.workspace_id == w.id and wu.user_id == ^user_id,
+      where: w.id == ^id and (w.user_id == ^user_id or not is_nil(wu.id)),
+      limit: 1
+    )
     |> Repo.one()
   end
   
@@ -20,8 +35,13 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   def get_workspace!(id, user_id) do
-    Workspace
-    |> where([w], w.id == ^id and w.user_id == ^user_id)
+    # Check if user owns the workspace or is a member
+    from(w in Workspace,
+      left_join: wu in WorkspaceUser,
+      on: wu.workspace_id == w.id and wu.user_id == ^user_id,
+      where: w.id == ^id and (w.user_id == ^user_id or not is_nil(wu.id)),
+      limit: 1
+    )
     |> Repo.one!()
   end
   
@@ -61,10 +81,26 @@ defmodule LifeOrg.WorkspaceService do
   end
 
   def create_workspace(attrs \\ %{}) do
-    %Workspace{}
-    |> Workspace.changeset(attrs)
-    |> maybe_update_default(attrs["user_id"] || attrs[:user_id])
-    |> Repo.insert()
+    user_id = attrs["user_id"] || attrs[:user_id]
+
+    Repo.transaction(fn ->
+      workspace =
+        %Workspace{}
+        |> Workspace.changeset(attrs)
+        |> maybe_update_default(user_id)
+        |> Repo.insert!()
+
+      # Create workspace_user entry marking this user as owner
+      %WorkspaceUser{}
+      |> WorkspaceUser.changeset(%{
+        workspace_id: workspace.id,
+        user_id: user_id,
+        is_owner: true
+      })
+      |> Repo.insert!()
+
+      workspace
+    end)
   end
 
   def update_workspace(%Workspace{} = workspace, attrs) do
@@ -93,6 +129,25 @@ defmodule LifeOrg.WorkspaceService do
       |> Workspace.changeset(%{is_default: true})
       |> Repo.update!()
     end)
+  end
+
+  def is_workspace_owner?(workspace_id, user_id) do
+    case Repo.get_by(Workspace, id: workspace_id, user_id: user_id) do
+      nil -> false
+      _ -> true
+    end
+  end
+
+  def has_workspace_access?(workspace_id, user_id) do
+    # Check if user is owner or member
+    query = from(w in Workspace,
+      left_join: wu in WorkspaceUser,
+      on: wu.workspace_id == w.id and wu.user_id == ^user_id,
+      where: w.id == ^workspace_id and (w.user_id == ^user_id or not is_nil(wu.id)),
+      select: count(w.id)
+    )
+
+    Repo.one(query) > 0
   end
 
   # Journal Entry functions
@@ -247,6 +302,177 @@ defmodule LifeOrg.WorkspaceService do
     Repo.delete(conversation)
   end
 
+  # Workspace Invitation functions
+  def create_invitation(workspace_id, email, inviter_user_id) do
+    # Check if user with email exists
+    case Repo.get_by(User, email: email) do
+      nil ->
+        {:error, "No user found with that email address"}
+
+      user ->
+        # Check if user is already a member
+        if has_workspace_access?(workspace_id, user.id) do
+          {:error, "User is already a member of this workspace"}
+        else
+          # Check for existing pending invitation
+          existing = Repo.get_by(WorkspaceInvitation,
+            workspace_id: workspace_id,
+            email: email,
+            status: "pending"
+          )
+
+          if existing do
+            {:error, "An invitation has already been sent to this email"}
+          else
+            WorkspaceInvitation.create_changeset(%{
+              workspace_id: workspace_id,
+              email: email,
+              invited_by_user_id: inviter_user_id
+            })
+            |> Repo.insert()
+          end
+        end
+    end
+  end
+
+  def list_pending_invitations(user_email) do
+    WorkspaceInvitation
+    |> where([i], i.email == ^user_email and i.status == "pending")
+    |> where([i], i.expires_at > ^DateTime.utc_now() or is_nil(i.expires_at))
+    |> preload([:workspace, :invited_by])
+    |> Repo.all()
+  end
+
+  def list_workspace_invitations(workspace_id) do
+    WorkspaceInvitation
+    |> where([i], i.workspace_id == ^workspace_id)
+    |> order_by([i], desc: i.inserted_at)
+    |> preload([:invited_by])
+    |> Repo.all()
+  end
+
+  def accept_invitation(invitation_id, user_id) do
+    invitation = Repo.get(WorkspaceInvitation, invitation_id)
+      |> Repo.preload(:workspace)
+
+    cond do
+      is_nil(invitation) ->
+        {:error, "Invitation not found"}
+
+      invitation.status != "pending" ->
+        {:error, "Invitation has already been #{invitation.status}"}
+
+      not is_nil(invitation.expires_at) && DateTime.compare(invitation.expires_at, DateTime.utc_now()) == :lt ->
+        {:error, "Invitation has expired"}
+
+      true ->
+        user = Repo.get(User, user_id)
+
+        if user.email != invitation.email do
+          {:error, "This invitation was sent to a different email address"}
+        else
+          Repo.transaction(fn ->
+            # Create workspace_user entry
+            %WorkspaceUser{}
+            |> WorkspaceUser.changeset(%{
+              workspace_id: invitation.workspace_id,
+              user_id: user_id,
+              is_owner: false
+            })
+            |> Repo.insert!()
+
+            # Update invitation status
+            invitation
+            |> Ecto.Changeset.change(%{status: "accepted"})
+            |> Repo.update!()
+
+            invitation.workspace
+          end)
+        end
+    end
+  end
+
+  def decline_invitation(invitation_id, user_id) do
+    invitation = Repo.get(WorkspaceInvitation, invitation_id)
+    user = Repo.get(User, user_id)
+
+    cond do
+      is_nil(invitation) ->
+        {:error, "Invitation not found"}
+
+      user.email != invitation.email ->
+        {:error, "This invitation was sent to a different email address"}
+
+      invitation.status != "pending" ->
+        {:error, "Invitation has already been #{invitation.status}"}
+
+      true ->
+        invitation
+        |> Ecto.Changeset.change(%{status: "declined"})
+        |> Repo.update()
+    end
+  end
+
+  def cancel_invitation(invitation_id, workspace_id, user_id) do
+    # Only workspace owner can cancel invitations
+    if is_workspace_owner?(workspace_id, user_id) do
+      invitation = Repo.get_by(WorkspaceInvitation, id: invitation_id, workspace_id: workspace_id)
+
+      if invitation do
+        Repo.delete(invitation)
+      else
+        {:error, "Invitation not found"}
+      end
+    else
+      {:error, "Only workspace owner can cancel invitations"}
+    end
+  end
+
+  # Workspace Member functions
+  def list_workspace_members(workspace_id) do
+    WorkspaceUser
+    |> where([wu], wu.workspace_id == ^workspace_id)
+    |> preload(:user)
+    |> Repo.all()
+  end
+
+  def remove_member(workspace_id, member_user_id, requesting_user_id) do
+    # Only workspace owner can remove members
+    if is_workspace_owner?(workspace_id, requesting_user_id) do
+      # Don't allow owner to remove themselves (they should use leave_workspace instead)
+      if member_user_id == requesting_user_id do
+        {:error, "Use leave_workspace to remove yourself from the workspace"}
+      else
+        workspace_user = Repo.get_by(WorkspaceUser, workspace_id: workspace_id, user_id: member_user_id)
+
+        if workspace_user do
+          Repo.delete(workspace_user)
+        else
+          {:error, "User is not a member of this workspace"}
+        end
+      end
+    else
+      {:error, "Only workspace owner can remove members"}
+    end
+  end
+
+  def leave_workspace(workspace_id, user_id) do
+    # If user is the owner, delete the workspace
+    if is_workspace_owner?(workspace_id, user_id) do
+      workspace = Repo.get(Workspace, workspace_id)
+      delete_workspace(workspace)
+    else
+      # Otherwise, just remove them from workspace_users
+      workspace_user = Repo.get_by(WorkspaceUser, workspace_id: workspace_id, user_id: user_id)
+
+      if workspace_user do
+        Repo.delete(workspace_user)
+      else
+        {:error, "You are not a member of this workspace"}
+      end
+    end
+  end
+
   # Private helper functions
   defp maybe_update_default(changeset, user_id) do
     case Ecto.Changeset.get_change(changeset, :is_default) do
@@ -342,5 +568,116 @@ defmodule LifeOrg.WorkspaceService do
     |> where([t], t.is_template == true)
     |> order_by([t], asc: t.title)
     |> Repo.all()
+  end
+
+  # Idea functions
+  def list_ideas(workspace_id) do
+    Idea
+    |> where([i], i.workspace_id == ^workspace_id)
+    |> order_by([i], [asc: i.position, desc: i.inserted_at])
+    |> Repo.all()
+    |> Repo.preload([:workspace, :journal_entry])
+  end
+
+  def get_idea(id, user_id) do
+    from(i in Idea,
+      join: w in Workspace,
+      on: i.workspace_id == w.id,
+      where: i.id == ^id and w.user_id == ^user_id,
+      preload: [:workspace, :journal_entry],
+      select: i
+    )
+    |> Repo.one()
+  end
+
+  def create_idea(attrs, workspace_id) do
+    attrs = Map.put(attrs, "workspace_id", workspace_id)
+    attrs = maybe_set_idea_position(attrs, workspace_id)
+
+    %Idea{}
+    |> Idea.changeset(attrs)
+    |> Repo.insert()
+    |> case do
+      {:ok, idea} -> {:ok, Repo.preload(idea, [:workspace, :journal_entry])}
+      error -> error
+    end
+  end
+
+  def update_idea(%Idea{} = idea, attrs) do
+    idea
+    |> Idea.changeset(attrs)
+    |> Repo.update()
+    |> case do
+      {:ok, updated_idea} -> {:ok, Repo.preload(updated_idea, [:workspace, :journal_entry], force: true)}
+      error -> error
+    end
+  end
+
+  def delete_idea(%Idea{} = idea) do
+    Repo.delete(idea)
+  end
+
+  def convert_idea_to_todo(%Idea{} = idea) do
+    Repo.transaction(fn ->
+      # Create new todo with idea's data
+      todo_attrs = %{
+        "title" => idea.title,
+        "description" => idea.description,
+        "tags" => idea.tags,
+        "workspace_id" => idea.workspace_id,
+        "journal_entry_id" => idea.journal_entry_id,
+        "ai_generated" => false
+      }
+
+      case create_todo(todo_attrs, idea.workspace_id) do
+        {:ok, todo} ->
+          # Mark idea as converted
+          case update_idea(idea, %{"status" => "converted"}) do
+            {:ok, _updated_idea} -> todo
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  def convert_todo_to_idea(%Todo{} = todo) do
+    Repo.transaction(fn ->
+      # Create new idea with todo's data
+      idea_attrs = %{
+        "title" => todo.title,
+        "description" => todo.description,
+        "tags" => todo.tags,
+        "workspace_id" => todo.workspace_id,
+        "journal_entry_id" => todo.journal_entry_id,
+        "status" => "captured"
+      }
+
+      case create_idea(idea_attrs, todo.workspace_id) do
+        {:ok, idea} ->
+          # Delete the todo
+          case delete_todo(todo) do
+            {:ok, _deleted_todo} -> idea
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  defp maybe_set_idea_position(attrs, workspace_id) do
+    if Map.has_key?(attrs, "position") do
+      attrs
+    else
+      max_position = Idea
+        |> where([i], i.workspace_id == ^workspace_id)
+        |> select([i], max(i.position))
+        |> Repo.one()
+        |> Kernel.||(0)
+
+      Map.put(attrs, "position", max_position + 1000)
+    end
   end
 end

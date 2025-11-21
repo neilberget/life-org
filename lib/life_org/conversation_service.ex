@@ -2,9 +2,9 @@ defmodule LifeOrg.ConversationService do
   alias LifeOrg.{Repo, Conversation, ChatMessage}
   import Ecto.Query
 
-  def create_conversation(title, workspace_id \\ nil, todo_id \\ nil, journal_entry_id \\ nil) do
+  def create_conversation(title, workspace_id \\ nil, todo_id \\ nil, journal_entry_id \\ nil, project_id \\ nil) do
     %Conversation{}
-    |> Conversation.changeset(%{title: title, workspace_id: workspace_id, todo_id: todo_id, journal_entry_id: journal_entry_id})
+    |> Conversation.changeset(%{title: title, workspace_id: workspace_id, todo_id: todo_id, journal_entry_id: journal_entry_id, project_id: project_id})
     |> Repo.insert()
   end
 
@@ -119,10 +119,37 @@ defmodule LifeOrg.ConversationService do
   def create_journal_extraction_conversation(journal_entry_id, workspace_id, extraction_context) do
     title = "Todo Extraction"
     {:ok, conversation} = create_conversation(title, workspace_id, nil, journal_entry_id)
-    
+
     # Add the extraction context as the first message
     add_message_to_conversation(conversation.id, "assistant", extraction_context)
-    
+
     {:ok, conversation}
+  end
+
+  def list_project_conversations(project_id) do
+    Conversation
+    |> where([c], c.project_id == ^project_id)
+    |> order_by([c], desc: c.updated_at)
+    |> preload(:chat_messages)
+    |> Repo.all()
+  end
+
+  def get_or_create_project_conversation(project_id, workspace_id, first_message) do
+    # Try to find an existing conversation for this project
+    case list_project_conversations(project_id) do
+      [] ->
+        # No existing conversations, create new one
+        title = "Project Chat: #{first_message |> String.slice(0, 30)}..."
+        create_conversation(title, workspace_id, nil, nil, project_id)
+
+      [conversation | _] ->
+        # Use most recent conversation
+        {:ok, conversation}
+    end
+  end
+
+  def create_new_project_conversation(project_id, workspace_id, first_message) do
+    title = "Project Chat: #{first_message |> String.slice(0, 30)}..."
+    create_conversation(title, workspace_id, nil, nil, project_id)
   end
 end

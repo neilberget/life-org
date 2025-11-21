@@ -3,6 +3,23 @@ import TurndownService from 'turndown';
 
 let RichTextEditor = {
     mounted() {
+        this.initializeEditor();
+    },
+
+    updated() {
+        // Re-initialize if Quill instance doesn't exist or the editor container is missing
+        const editorContainer = this.el.querySelector('.rich-text-content');
+        if (!this.quill || !editorContainer || !editorContainer.classList.contains('ql-container')) {
+            this.initializeEditor();
+        }
+    },
+
+    initializeEditor() {
+        // Prevent double initialization
+        if (this.quill && this.el.querySelector('.ql-container')) {
+            return;
+        }
+
         // Initialize turndown service for HTML to Markdown conversion
         this.turndownService = new TurndownService({
             codeBlockStyle: 'fenced',
@@ -194,8 +211,6 @@ let RichTextEditor = {
                 }
             }
         });
-
-
     },
 
     pushContentUpdate() {

@@ -498,6 +498,24 @@ Hooks.TodoDragDropKeyboard = {
   }
 };
 
+// Flash auto-dismiss hook
+Hooks.FlashAutoDismiss = {
+  mounted() {
+    // Auto-dismiss after 5 seconds
+    this.timeout = setTimeout(() => {
+      // Trigger the click event to dismiss the flash
+      this.el.click();
+    }, 5000);
+  },
+
+  destroyed() {
+    // Clear timeout if flash is manually dismissed before 5 seconds
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+    }
+  }
+};
+
 // Link preview loader hook
 Hooks.LinkPreviewLoader = {
   mounted() {

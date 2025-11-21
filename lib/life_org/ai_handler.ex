@@ -166,6 +166,7 @@ defmodule LifeOrg.AIHandler do
         action: case tool_use.name do
           "search_content" -> :search_content
           "create_todo" -> :create_todo
+          "create_idea" -> :create_idea
           "update_todo" -> :update_todo
           "complete_todo" -> :complete_todo
           "delete_todo" -> :delete_todo
@@ -254,6 +255,14 @@ defmodule LifeOrg.AIHandler do
           tags: tool_use.input["tags"] || [],
           projects: tool_use.input["projects"] || []
         }
+      "create_idea" ->
+        %{
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          category: tool_use.input["category"],
+          timeframe: tool_use.input["timeframe"],
+          tags: tool_use.input["tags"] || []
+        }
       "update_todo" ->
         updates = %{}
         |> maybe_add("title", tool_use.input["title"])
@@ -301,7 +310,7 @@ defmodule LifeOrg.AIHandler do
         case result do
           {:ok, %Todo{} = todo} -> "Successfully created todo: #{todo.title} (ID: #{todo.id})"
           {:ok, todo} -> "Created todo: #{inspect(todo)}"
-          {:error, %Ecto.Changeset{} = changeset} -> 
+          {:error, %Ecto.Changeset{} = changeset} ->
             errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
               Enum.reduce(opts, msg, fn {key, value}, acc ->
                 String.replace(acc, "%{#{key}}", to_string(value))
@@ -309,6 +318,20 @@ defmodule LifeOrg.AIHandler do
             end)
             "Failed to create todo: #{inspect(errors)}"
           {:error, error} -> "Failed to create todo: #{inspect(error)}"
+          error -> "Unexpected result: #{inspect(error)}"
+        end
+      "create_idea" ->
+        case result do
+          {:ok, %LifeOrg.Idea{} = idea} -> "Successfully created idea: #{idea.title} (ID: #{idea.id})"
+          {:ok, idea} -> "Created idea: #{inspect(idea)}"
+          {:error, %Ecto.Changeset{} = changeset} ->
+            errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+              Enum.reduce(opts, msg, fn {key, value}, acc ->
+                String.replace(acc, "%{#{key}}", to_string(value))
+              end)
+            end)
+            "Failed to create idea: #{inspect(errors)}"
+          {:error, error} -> "Failed to create idea: #{inspect(error)}"
           error -> "Unexpected result: #{inspect(error)}"
         end
       "update_todo" ->
@@ -662,6 +685,38 @@ defmodule LifeOrg.AIHandler do
           },
           "required" => ["id", "content"]
         }
+      },
+      %{
+        "name" => "create_idea",
+        "description" => "Create a new idea for future possibilities, someday projects, or long-term thoughts. Ideas are separate from todos - use this for far-future or aspirational items rather than immediate actionable tasks.",
+        "input_schema" => %{
+          "type" => "object",
+          "properties" => %{
+            "title" => %{
+              "type" => "string",
+              "description" => "The title of the idea"
+            },
+            "description" => %{
+              "type" => "string",
+              "description" => "Optional description with more details about the idea"
+            },
+            "category" => %{
+              "type" => "string",
+              "description" => "Category to organize the idea (e.g., 'Gift Ideas', 'Project Ideas', 'Life Improvements')"
+            },
+            "timeframe" => %{
+              "type" => "string",
+              "enum" => ["someday", "next_year", "distant_future"],
+              "description" => "Rough timeframe for when this idea might be relevant"
+            },
+            "tags" => %{
+              "type" => "array",
+              "items" => %{"type" => "string"},
+              "description" => "Tags to categorize the idea"
+            }
+          },
+          "required" => ["title"]
+        }
       }
     ]
   end
@@ -727,6 +782,17 @@ defmodule LifeOrg.AIHandler do
           action: :add_todo_comment,
           id: tool_use.input["id"],
           content: tool_use.input["content"]
+        }
+
+      "create_idea" ->
+        %{
+          action: :create_idea,
+          title: tool_use.input["title"],
+          description: tool_use.input["description"] || "",
+          category: tool_use.input["category"],
+          timeframe: tool_use.input["timeframe"],
+          tags: tool_use.input["tags"] || [],
+          journal_entry_id: journal_entry_id
         }
     end
   end
@@ -823,7 +889,34 @@ defmodule LifeOrg.AIHandler do
     
     WorkspaceService.create_todo(todo_attrs, workspace_id)
   end
-  
+
+  def execute_tool_action(%{action: :create_idea} = params, workspace_id) do
+    # Ensure tags is always a list of strings
+    tags = case params.tags do
+      nil -> []
+      [] -> []
+      tags when is_list(tags) -> Enum.map(tags, &to_string/1)
+      tags -> [to_string(tags)]
+    end
+
+    idea_attrs = %{
+      "title" => params.title,
+      "description" => params.description,
+      "category" => params.category,
+      "timeframe" => params.timeframe,
+      "tags" => tags
+    }
+
+    # Add journal_entry_id if present
+    idea_attrs = if params[:journal_entry_id] do
+      Map.put(idea_attrs, "journal_entry_id", params.journal_entry_id)
+    else
+      idea_attrs
+    end
+
+    WorkspaceService.create_idea(idea_attrs, workspace_id)
+  end
+
   def execute_tool_action(%{action: :update_todo, id: id, updates: updates}, _workspace_id) do
     case Repo.get(Todo, id) do
       nil -> 
@@ -852,30 +945,36 @@ defmodule LifeOrg.AIHandler do
   def execute_tool_action(%{action: :search_content} = params, workspace_id) do
     search_opts = [
       workspace_id: workspace_id,
-      limit: params.limit
+      limit: Map.get(params, :limit, 10)
     ]
 
     # Apply date filtering if provided
-    search_opts = if params.date_from || params.date_to do
-      Keyword.put(search_opts, :date_from, params.date_from) |> Keyword.put(:date_to, params.date_to)
+    date_from = Map.get(params, :date_from)
+    date_to = Map.get(params, :date_to)
+    search_opts = if date_from || date_to do
+      Keyword.put(search_opts, :date_from, date_from) |> Keyword.put(:date_to, date_to)
     else
       search_opts
     end
 
     # Apply todo status filtering if provided
-    search_opts = if params.todo_status && params.todo_status != "all" do
-      Keyword.put(search_opts, :todo_status, params.todo_status)
+    todo_status = Map.get(params, :todo_status, "all")
+    search_opts = if todo_status && todo_status != "all" do
+      Keyword.put(search_opts, :todo_status, todo_status)
     else
       search_opts
     end
 
-    case params.content_type do
+    content_type = Map.get(params, :content_type, "all")
+    query = Map.get(params, :query, "")
+
+    case content_type do
       "journal" ->
-        execute_journal_search(params.query, search_opts)
+        execute_journal_search(query, search_opts)
       "todo" ->
-        execute_todo_search(params.query, search_opts)
+        execute_todo_search(query, search_opts)
       _ -> # "all" or any other value
-        execute_combined_search(params.query, search_opts)
+        execute_combined_search(query, search_opts)
     end
   end
 
@@ -1989,6 +2088,136 @@ Use this project information to provide more targeted advice and suggestions tha
       
       **Recent Journal Entries for Context**
       #{entries_list}
+      """
+    end
+  end
+
+  def process_project_message(message, project, project_todos, all_todos, conversation_history \\ [], workspace_id) do
+    system_prompt = build_project_system_prompt(project, project_todos, all_todos)
+
+    # Define available tools for project conversations
+    tools = build_tools_definition(all_todos)
+
+    # Combine conversation history with new message
+    messages = conversation_history ++ [%{role: "user", content: message}]
+
+    result = retry_with_backoff(fn ->
+      AnthropicClient.send_message(messages, system_prompt, tools)
+    end, max_retries: 2, retry_on: :timeout)
+
+    case result do
+      {:ok, response} ->
+        content_blocks = AnthropicClient.extract_content_from_response(response)
+        # Extract text message and tool uses separately
+        assistant_message = AnthropicClient.extract_text_from_content(content_blocks)
+
+        tool_uses = AnthropicClient.extract_tool_uses_from_content(content_blocks)
+
+        # If there are tool uses, execute them and get final response
+        if length(tool_uses) > 0 do
+          try do
+            execute_tools_and_continue(messages, system_prompt, tools, content_blocks, tool_uses, workspace_id)
+          rescue
+            error ->
+              {:error, "Tool execution failed: #{inspect(error)}"}
+          end
+        else
+          # No tools used, return the response directly
+          {:ok, assistant_message, []}
+        end
+
+      {:error, error} ->
+        {:error, "Sorry, I encountered an error: #{error}"}
+    end
+  end
+
+  defp build_project_system_prompt(project, project_todos, all_todos) do
+    # Format project details
+    project_details = format_project_details(project)
+
+    # Format todos for this project
+    project_todos_context = format_project_todos(project_todos)
+
+    # Get existing tags for context
+    existing_tags = get_unique_tags(all_todos)
+    tags_context = case existing_tags do
+      [] -> "No existing tags."
+      tags -> "Available tags: " <> Enum.join(Enum.take(tags, 15), ", ") <> if length(tags) > 15, do: "...", else: ""
+    end
+
+    """
+    You are a helpful project management assistant focused on helping with a specific project. You help manage project todos, provide insights about project progress, and offer suggestions for completing project tasks.
+
+    CURRENT PROJECT:
+    #{project_details}
+
+    PROJECT TODOS:
+    #{project_todos_context}
+
+    #{tags_context}
+
+    You can help with:
+    - Creating new todos for the project
+    - Breaking down project tasks into manageable subtasks
+    - Providing project-specific advice and suggestions
+    - Understanding project progress and identifying blockers
+    - Managing todo details (priority, tags, descriptions, due dates)
+    - Finding related past todos using semantic search (search_content tool)
+    - Searching the web for current information, resources, or best practices
+
+    SUBTASK FORMATTING: When creating or updating todo descriptions with subtasks, use GitHub-style markdown checkboxes:
+    - Use `- [ ]` for unchecked subtasks
+    - Use `- [x]` for checked subtasks
+    These will render as clickable checkboxes in the UI for easy progress tracking.
+
+    When creating new todos for this project, automatically tag them with the project name: "#{project.name}".
+
+    Be supportive and provide actionable advice specific to this project. Use the available tools when the user wants to create or modify todos, or needs current information from the internet.
+    """
+  end
+
+  defp format_project_details(project) do
+    description_part = if project.description && String.trim(project.description) != "" do
+      "\nDescription: #{project.description}"
+    else
+      ""
+    end
+
+    url_part = if project.url && String.trim(project.url) != "" do
+      "\nURL: #{project.url}"
+    else
+      ""
+    end
+
+    """
+    Name: #{project.name}#{description_part}#{url_part}
+    """
+  end
+
+  defp format_project_todos(project_todos) do
+    if Enum.empty?(project_todos) do
+      "No todos yet for this project."
+    else
+      completed_count = Enum.count(project_todos, & &1.completed)
+      pending_count = length(project_todos) - completed_count
+
+      pending_todos = Enum.filter(project_todos, &(not &1.completed))
+      |> Enum.map(fn todo ->
+        priority = String.upcase(todo.priority || "medium")
+        due_info = case todo.due_date do
+          nil -> ""
+          date -> " | Due: #{date}"
+        end
+        current_marker = if todo.current, do: " [CURRENT]", else: ""
+        "- ○ [#{priority}] #{todo.title}#{due_info}#{current_marker}"
+      end)
+      |> Enum.join("\n")
+
+      """
+      Total: #{length(project_todos)} todos (#{pending_count} pending, #{completed_count} completed)
+
+      Pending Todos:
+      #{if pending_count > 0, do: pending_todos, else: "All todos completed!"}
       """
     end
   end

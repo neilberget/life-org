@@ -559,3 +559,11 @@ The journal extraction system was enhanced with **vector search integration** to
 - **Chat Continuity**: Users can view the complete extraction conversation when opening journal chat, providing full context for follow-up interactions
 
 This enhanced pipeline creates significantly more comprehensive and contextually relevant todos by leveraging the full workspace history through semantic search, while maintaining robust error handling and performance characteristics.
+
+## Knowledge Base
+
+This project uses a structured knowledge management system located in `.claude/knowledge/`.
+
+**For Claude**: Check `.claude/knowledge/INDEX.md` to find relevant project knowledge. The index maps topics to detailed knowledge files organized by category (hosting, conventions, architecture, troubleshooting, etc.). Always consult the index when you need project-specific information.
+
+**For developers**: The knowledge base captures important project decisions, conventions, troubleshooting solutions, and other context that helps maintain consistency. Use the `knowledge-manager` skill to capture new knowledge from conversations.

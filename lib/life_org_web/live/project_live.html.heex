@@ -1,0 +1,136 @@
+<div class="h-screen flex flex-col bg-gray-50">
+  <!-- Header -->
+  <div class="bg-white border-b border-gray-200 px-6 py-4">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <.link navigate="/" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </.link>
+
+        <%= if @project.favicon_url do %>
+          <img src={@project.favicon_url} alt="" class="w-6 h-6" />
+        <% end %>
+
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900"><%= @project.name %></h1>
+          <%= if @project.description do %>
+            <p class="text-sm text-gray-600 mt-1"><%= @project.description %></p>
+          <% end %>
+          <%= if @project.url do %>
+            <a href={@project.url} target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:text-blue-800 mt-1 inline-flex items-center gap-1">
+              <%= @project.url %>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span
+          class="inline-block w-3 h-3 rounded-full"
+          style={"background-color: #{@project.color}"}
+        />
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-column layout -->
+  <div class="flex-1 flex overflow-hidden">
+    <!-- Left column: Todos -->
+    <div class="w-1/2 border-r border-gray-200 overflow-y-auto">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-gray-900">
+            Project Todos
+            <span class="ml-2 text-sm font-normal text-gray-500">
+              (<%= length(@todos) %>)
+            </span>
+          </h2>
+        </div>
+
+        <%= if Enum.empty?(@todos) do %>
+          <div class="text-center py-12 text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <p class="text-lg">No todos yet</p>
+            <p class="text-sm mt-1">Add this project tag to todos to see them here</p>
+          </div>
+        <% else %>
+          <div class="space-y-2">
+            <%= for todo <- @todos do %>
+              <div class="bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
+                <div class="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={todo.completed}
+                    phx-click="toggle_todo"
+                    phx-value-id={todo.id}
+                    class="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+
+                  <div class="flex-1 min-w-0">
+                    <.link navigate={"/todo/#{todo.id}"} class="block group">
+                      <h3 class={"text-sm font-medium group-hover:text-blue-600 transition-colors #{if todo.completed, do: "line-through text-gray-500", else: "text-gray-900"}"}>
+                        <%= todo.title %>
+                      </h3>
+                      <%= if todo.description && todo.description != "" do %>
+                        <p class="text-sm text-gray-600 mt-1 line-clamp-2">
+                          <%= todo.description |> String.slice(0, 100) %>
+                        </p>
+                      <% end %>
+                    </.link>
+
+                    <div class="flex items-center gap-2 mt-2 flex-wrap">
+                      <%= if todo.current do %>
+                        <span class="text-xs px-2 py-0.5 bg-green-100 text-green-800 rounded-full font-medium">
+                          Current
+                        </span>
+                      <% end %>
+
+                      <%= if todo.priority do %>
+                        <span class={"text-xs px-2 py-0.5 rounded-full font-medium #{priority_class(todo.priority)}"}>
+                          <%= String.capitalize(todo.priority) %>
+                        </span>
+                      <% end %>
+
+                      <%= if todo.due_date do %>
+                        <span class="text-xs text-gray-500">
+                          Due: <%= LifeOrgWeb.TimezoneHelper.format_date(todo.due_date, @user_timezone) %>
+                        </span>
+                      <% end %>
+
+                      <%= if todo.tags && length(todo.tags) > 0 do %>
+                        <%= for tag <- Enum.take(todo.tags, 3) do %>
+                          <span class="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full">
+                            <%= tag %>
+                          </span>
+                        <% end %>
+                      <% end %>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Right column: Chat -->
+    <div class="w-1/2 flex flex-col bg-white">
+      <ChatComponent.chat_interface
+        chat_messages={@chat_messages}
+        conversations={@conversations}
+        current_conversation={@current_conversation}
+        processing_message={@processing_message}
+        user_timezone={@user_timezone}
+        context_type="project"
+      />
+    </div>
+  </div>
+</div>
